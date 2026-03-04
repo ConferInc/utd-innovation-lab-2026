@@ -1,7 +1,7 @@
 # Week 3 Assignment — JKYog WhatsApp Bot
 ## Team 4B: Engineering & Bot Development
 
-**Due:** Thursday, March 6, 2026, 11:59 PM CST  
+**Due:** Friday, March 6, 2026, 11:59 PM CST  
 **Team Deliverable:** Working bot prototype (2+ intents using Knowledge Base)
 
 ---
@@ -106,7 +106,7 @@ You are building a functional WhatsApp bot prototype for JKYog. This is hands-on
 2. **Integration:** Uses Leena's Knowledge Base for responses
 3. **External API:** At least one working integration (Google Maps preferred)
 4. **Documentation:** README explaining how to run the bot
-5. **Deadline:** Thursday, March 6, 2026, 11:59 PM CST
+5. **Deadline:** Friday, March 6, 2026, 11:59 PM CST
 6. **Repository:** Upload to `4B/week3/` directory
 
 ---

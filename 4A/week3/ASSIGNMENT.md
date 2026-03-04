@@ -1,7 +1,7 @@
 # Week 3 Assignment — JKYog WhatsApp Bot
 ## Team 4A: Conversational UX & Design
 
-**Due:** Thursday, March 6, 2026, 11:59 PM CST  
+**Due:** Friday, March 6, 2026, 11:59 PM CST  
 **Team Deliverable:** Complete Conversation Design Document
 
 ---
@@ -71,7 +71,7 @@ Define how to measure bot success:
 ## 📝 SUBMISSION REQUIREMENTS
 
 1. **Format:** Markdown files + JSON/flowcharts as specified
-2. **Deadline:** Thursday, March 6, 2026, 11:59 PM CST
+2. **Deadline:** Friday, March 6, 2026, 11:59 PM CST
 3. **Repository:** Upload to `4A/week3/` directory
 4. **Git Hygiene:** Individual branches, one consolidated PR per team
 
