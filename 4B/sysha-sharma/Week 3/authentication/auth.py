@@ -2,8 +2,8 @@ from fastapi import Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from database.models import get_db
-from auth.phone_verification import authenticate_phone_user
-from auth.session_manager import generate_session, validate_session
+from .phone_verification import authenticate_phone_user
+from .session_manager import generate_session, validate_session
 
 
 async def verify_whatsapp_request(request: Request, db: Session = Depends(get_db)):
