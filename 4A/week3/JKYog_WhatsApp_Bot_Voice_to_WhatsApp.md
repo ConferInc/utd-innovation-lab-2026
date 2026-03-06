@@ -2,7 +2,7 @@
 Owner: Chanakya Alluri  
 Due: March 6, 2026 (11:59 PM CST)
 
-## 0) Purpose
+## Purpose
 These scripts handle:
 1) Transition from a **voice call** (IVR/voice bot) into **WhatsApp chat** with the JKYog bot  
 2) Five **error/fallback scenarios** (user-safe messaging + recovery prompts)
@@ -11,7 +11,7 @@ Tone: respectful, calm, devotional-friendly, minimal friction.
 
 ---
 
-# 3) Five Error / Fallback Scenarios (User Messages + Recovery)
+# Five Error / Fallback Scenarios (User Messages + Recovery)
 
 ## Error 1: Intent Not Understood
 
