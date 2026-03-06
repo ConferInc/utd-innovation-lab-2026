@@ -1,0 +1,113 @@
+{
+    "DonationRequests": {
+      "start": {
+        "message": "Hello, thank you for calling JKYog. How would you like to support the temple?",
+        "options": [
+          {
+            "text": "Make a Donation",
+            "next": "make_donation"
+          },
+          {
+            "text": "Recurring Donations",
+            "next": "recurring_donations"
+          },
+          {
+            "text": "Sponsorship Information",
+            "next": "sponsor_info"
+          },
+          {
+            "text": "Tax Receipts",
+            "next": "tax_receipts"
+          }
+        ]
+      },
+  
+
+      "make_donation": {
+        "message": "The temple operation depends on your generous donations. If you find your visit enjoyable, please do consider making a donation to the temple. Hundi boxes are located at the altars. General donations are also accepted at the reception, gift shop, or in the canteen. Online donations can also be made. Donations can also be made in the form of sponsorship of various temple activities.",
+        "options": [
+          {
+            "text": "Sponsorship Information",
+            "next": "sponsor_info"
+          },
+          {
+            "text": "Recurring Donations",
+            "next": "recurring_donations"
+          },
+          {
+            "text": "Tax Receipts",
+            "next": "tax_receipts"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+
+
+      "sponsor_info": {
+        "message": "Donations can be made in the form of sponsorship of various temple activities. Sponsorships can be for one single program or can run over a period of time for many repetitive events. Sponsorships can be for programs for auspicious hindu holidays such as Diwali, Janmashtami, Navaratri, or they can be for weekly Mahaprasad, Phal Phool for the prayer hall, or for any of the temple programs.",
+        "options": [
+          {
+            "text": "Make a Donation",
+            "next": "make_donation"
+          },
+          {
+            "text": "Recurring Donations",
+            "next": "recurring_donations"
+          },
+          {
+            "text": "Tax Receipts",
+            "next": "tax_receipts"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+  
+
+      "recurring_donations": {
+        "message": "Recurring donations can be set up through the temple website, jkyog.org, to support ongoing programs and services.",
+        "options": [
+          {
+            "text": "Sponsorship Information",
+            "next": "sponsor_info"
+          },
+          {
+            "text": "Tax Receipts",
+            "next": "tax_receipts"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+  
+
+      "tax_receipts": {
+        "message": "Please contact the temple office if you would like further information on tax receipts by visiting the temple receptionist's desk",
+        "options": [
+          {
+            "text": "Make a Donation",
+            "next": "make_donation"
+          },
+          {
+            "text": "Recurring Donations",
+            "next": "recurring_donations"
+          },
+          {
+            "text": "Sponsorship Information",
+            "next": "sponsor_info"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      }
+    }
+  }
