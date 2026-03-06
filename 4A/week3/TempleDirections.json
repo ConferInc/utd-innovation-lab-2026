@@ -1,0 +1,81 @@
+{
+    "TempleDirections": {
+      "start": {
+        "message": "Hello, how can I assist you with directions to the temple?",
+        "options": [
+          {
+            "text": "Temple Address",
+            "next": "address"
+          },
+          {
+            "text": "Driving Directions",
+            "next": "driving"
+          },
+          {
+            "text": "Parking Information",
+            "next": "parking"
+          },
+          {
+            "text": "Wheelchair & Mobility Accessibility",
+            "next": "accessibility"
+          }
+        ]
+      },
+  
+
+      "address": {
+        "message": "The temple is located at 1450 North Watters Road, Allen, TX 75013.",
+        "options": [
+          {
+            "text": "Driving Directions",
+            "next": "driving"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+  
+
+      "driving": {
+        "message": "You can reach the temple using local roads or major highways. Search the temple name, Radha Krishna Temple, on any mapping service such as Google Maps, Apple Maps, or Waze for turn-by-turn directions.",
+        "options": [
+          {
+            "text": "Parking Information",
+            "next": "parking"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+  
+
+      "parking": {
+        "message": "Free parking is available at the temple parking lot. The main parking lot entrance is located on North Watters Rd, just north of Bossy Boots Drive intersection. Overflow parking is located at the Watters Montessori next door to the temple along Bossy Boots Dr. No overnight parking is permitted on temple grounds.",
+        "options": [
+          {
+            "text": "Public Transportation",
+            "next": "public_transit"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+  
+      
+      "accessibility": {
+        "message": "The parking lot has handicap parking spaces located on the north and west side of the building. The north side spaces include van spaces. The north side handicap spaces are located closest to the entrance of the building. The building has wheelchair accessible ramps from the parking lot and visitors in wheelchair can take the elevator to the 2nd floor prayer hall. If you need further assistance or have questions, please do not hesitate to contact the reception desk by calling the temple main number or stop by the reception desk on the 2nd floor for help.",
+        "options": [
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      }
+    }
+  }
