@@ -1,0 +1,48 @@
+{
+  "DonationRequests": {
+    "start": {
+      "node_id": "DR_1",
+      "message": "Hello, thank you for calling JKYog. How would you like to support the temple?",
+      "options": [
+        {"text": "Make a Donation", "next": "make_donation"},
+        {"text": "Recurring Donations", "next": "recurring_donations"},
+        {"text": "Sponsorship Information", "next": "sponsor_info"},
+        {"text": "Tax Receipts", "next": "tax_receipts"}
+      ]
+    },
+    "make_donation": {
+      "node_id": "DR_2",
+      "message": "The temple operation depends on your generous donations...",
+      "options": [
+        {"text": "Sponsorship Information", "next": "sponsor_info"},
+        {"text": "Back", "next": "start"}
+      ]
+    },
+    "sponsor_info": {
+      "node_id": "DR_3",
+      "message": "Donations can be made in the form of sponsorship...",
+      "options": [{"text": "Back", "next": "start"}]
+    },
+    "recurring_donations": {
+      "node_id": "DR_4",
+      "message": "Recurring donations can be set up through jkyog.org.",
+      "options": [{"text": "Back", "next": "start"}]
+    },
+    "tax_receipts": {
+      "node_id": "DR_5",
+      "message": "Please contact the temple office for tax receipts.",
+      "options": [{"text": "Back", "next": "start"}]
+    },
+    "inactivity_handler": {
+      "node_id": "DR_6",
+      "timeout_seconds": 45,
+      "message": "It looks like you're away. I'll end this donation session now.",
+      "next": "end"
+    },
+    "end": {
+      "node_id": "DR_7",
+      "message": "Thank you for your interest in supporting JKYog.",
+      "options": []
+    }
+  }
+}

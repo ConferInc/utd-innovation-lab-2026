@@ -1,122 +1,78 @@
-# UTD Innovation Lab 2026 — Confer Solutions AI
+# UTD Innovation Lab 2026
 
-**Course:** MIS 6349 — Digital Consulting Project  
-**University:** UT Dallas, Jindal School of Business  
-**Semester:** Spring 2026  
-**Project:** Multi-Channel Engagement Platform for Confer Solutions AI
+## Multi-Channel Engagement Platform
 
----
-
-## 🎯 Project Overview
-
-This repository contains the work of two student consulting teams (Group 4A and Group 4B) developing a Multi-Channel Engagement Platform for Confer Solutions AI. The platform integrates WhatsApp, SMS, Email, and WebChat into a unified system for mortgage loan origination communications.
-
-**Client:** Confer Solutions AI (Yatin Karnik, CEO)  
-**Industry:** Mortgage / Financial Services / AI Technology
+**Sponsor:** Confer Solutions AI  
+**Mentor:** Yatin Karnik (Founder & CEO)  
+**Program Manager:** Hermes (hermes@confersolutions.ai)  
+**Duration:** Spring 2026 Semester
 
 ---
 
-## 👥 Teams
+## Semester Overarching Goal
 
-### Group 4A — Team Lead: Rujul Shukla
-| Student | GitHub | Folder |
-|---------|--------|--------|
-| Rujul Shukla (Lead) | @TBD | [`4A/rujul-shukla/`](4A/rujul-shukla/) |
-| Chanakya Sairam Varma Alluri | @TBD | [`4A/chanakya-alluri/`](4A/chanakya-alluri/) |
-| Harshith Bharathbhushan | @TBD | [`4A/harshith-bharathbhushan/`](4A/harshith-bharathbhushan/) |
-| Nikita Pal | @TBD | [`4A/nikita-pal/`](4A/nikita-pal/) |
-| Ananth Subramaniam Vangala | @TBD | [`4A/ananth-vangala/`](4A/ananth-vangala/) |
+Build a production-ready **Multi-Channel Engagement Platform** for Confer Solutions that serves:
 
-### Group 4B — Team Lead: Sysha Sharma
-| Student | GitHub | Folder |
-|---------|--------|--------|
-| Sysha Sharma (Lead) | @TBD | [`4B/sysha-sharma/`](4B/sysha-sharma/) |
-| Chakradhar Reddy Gummakonda | @TBD | [`4B/chakradhar-gummakonda/`](4B/chakradhar-gummakonda/) |
-| Leena Hussein | @TBD | [`4B/leena-hussein/`](4B/leena-hussein/) |
-| Rohan Bhargav Kothapalli | @TBD | [`4B/rohan-kothapalli/`](4B/rohan-kothapalli/) |
-| Rohan Bhargav Kothapalli | @TBD | [`4B/rohan-kothapalli/`](4B/rohan-kothapalli/) |
+- **JKYog** — spiritual community engagement (WhatsApp, voice, web)
+- **Confer LOS** — mortgage customer communications  
+- **Odyssey Nutri** — B2B/B2C health platform
+
+By semester end, you will have researched, prototyped, and documented a unified engagement system architecture that integrates AI voice, WhatsApp, email, SMS, and web chat — with working prototypes and vendor recommendations.
 
 ---
 
-## 📁 Repository Structure
+## Team Structure
 
-```
-utd-innovation-lab-2026/
-├── README.md                 # This file — project overview
-├── STANDARDS.md             # Coding standards & conventions
-├── CONTRIBUTING.md          # Contribution guidelines
-├── WEEKLY_TEMPLATE.md       # Template for weekly summaries
-├── .gitignore              # Git ignore rules
-├── 4A/                     # Group 4A workspace
-│   ├── README.md           # 4A team overview
-│   └── [student-folders]/  # Individual student folders
-└── 4B/                     # Group 4B workspace
-    ├── README.md           # 4B team overview
-    └── [student-folders]/  # Individual student folders
-```
-
-Each student has their own folder for individual work, research, and weekly deliverables.
+| Team | Lead | Focus | Members |
+|------|------|-------|---------|
+| **4A** | Rujul Shukla | Bot Architecture & Integration | Rujul, Nikita, Chanakya, Ananth, Harshith |
+| **4B** | Sysha Sharma | Marketing Automation & UX Strategy | Sysha, Rohan, Leena, Subodh, Chakradhar |
 
 ---
 
-## 🚀 Quick Start
-
-### For Students
-
-1. **Provide your GitHub username** to be added as a collaborator
-2. **Clone the repository:**
-   ```bash
-   git clone https://github.com/confersolutions/utd-innovation-lab-2026.git
-   cd utd-innovation-lab-2026
-   ```
-3. **Read the guidelines:**
-   - [`STANDARDS.md`](STANDARDS.md) — coding and documentation standards
-   - [`CONTRIBUTING.md`](CONTRIBUTING.md) — how to contribute your work
-   - [`WEEKLY_TEMPLATE.md`](WEEKLY_TEMPLATE.md) — weekly summary format
-4. **Start working** in your assigned folder
-
-### Weekly Workflow
+## Weekly Cadence
 
 | Day | Activity |
 |-----|----------|
-| Monday-Wednesday | Work on assigned tasks |
-| **Thursday** | **Submit weekly summary to your team lead** |
-| Friday | Team leads compile and send to Confer |
-| Friday 11am | Yatin meets Group 4A |
-| Friday 12pm | Yatin meets Group 4B |
+| **Monday** | Task assignment emails sent (CC: team leads) |
+| **Tuesday EOD** | Progress check-in (team leads post update in channel) |
+| **Thursday EOD** | All deliverables committed to GitHub AND individual EOW email sent to students@mail.confersolutions.ai |
+| **Friday 11am** | Group 4A Meeting with Yatin — https://meetings.dialpad.com/room/marketingandsales/3szfht32px |
+| **Friday 12pm** | Group 4B Meeting with Yatin — https://meetings.dialpad.com/room/marketingandsales/z1ez25w3vg |
 
 ---
 
-## 📋 Key Documents
+## Communication
 
-| Document | Purpose |
-|----------|---------|
-| [`STANDARDS.md`](STANDARDS.md) | Coding standards, naming conventions, documentation requirements |
-| [`CONTRIBUTING.md`](CONTRIBUTING.md) | Git workflow, commit messages, pull request process |
-| [`WEEKLY_TEMPLATE.md`](WEEKLY_TEMPLATE.md) | Format for weekly progress summaries |
+- **Primary:** Email (students@mail.confersolutions.ai)
+- **Internal:** Team Slack/Discord (create your own)
+- **GitHub:** All deliverables, research, and documentation
 
 ---
 
-## 📞 Contacts
+## Standards
 
-**Confer Solutions AI:**
-- Yatin Karnik (CEO) — yatin@confersolutions.ai
-- Shrikanth Venkataraman — shrikanth@mail.confersolutions.ai
-- Sivram Valluripalli — sivram@mail.confersolutions.ai
-
-**UT Dallas Faculty:**
-- Professor Ramesh Garapaty — Ramesh.Garapaty@UTDallas.edu
-- TA Yidi Li — Yidi.Li@UTDallas.edu
+1. **All research in Perplexity Flow** — export and commit `.md` files showing queries
+2. **All findings in GitHub Markdown** — no Google Docs, no slides
+3. **Cost analysis required** — every tool recommendation needs pricing at 3 scales (1K/10K/100K users)
+4. **New tool discovery** — at least 2 tools per category that haven't been mentioned
+5. **Working prototypes encouraged** — spin up trials/demos when possible
 
 ---
 
-## 🔒 Security & Access
+## Project Resources
 
-- This repository is **public** for student access
-- Students have **collaborator access only** — cannot access private Confer repositories
-- Do **NOT** commit API keys, passwords, or sensitive credentials
-- Use environment variables or `.env` files (gitignored) for secrets
+- [Innovation Lab Deck v1](./decks/innovation-lab-v1.md)
+- [Innovation Lab Deck v2](./decks/innovation-lab-v2.md)
+- Team 4A Charter → [4A/README.md](./4A/README.md)
+- Team 4B Charter → [4B/README.md](./4B/README.md)
 
 ---
 
-*Last updated: February 2026*
+## Week 1 Kickoff
+
+See individual team READMEs for detailed Week 1 assignments.
+
+---
+
+*If it isn't documented in Markdown, it doesn't exist.*

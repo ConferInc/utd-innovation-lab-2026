@@ -1,0 +1,133 @@
+{
+    "VisitorInquiries": {
+      "start": {
+        "node_id": "VI_1",
+        "message": "Hello, thank you for calling JKYog. How can I help with your visit to the temple?",
+        "options": [
+          {
+            "text": "Temple Timings",
+            "next": "temple_timings"
+          },
+          {
+            "text": "Upcoming Events",
+            "next": "events"
+          },
+          {
+            "text": "Visitor Guidelines",
+            "next": "visitor_guidelines"
+          }
+        ]
+      },
+  
+
+      "temple_timings": {
+        "node_id": "VI_2",
+        "message": "Temple timings are: 9:30 AM to 1 PM and 5:30 PM to 8:30 PM on Monday through Friday. The temple is open 9:30 AM to 8:30 PM on Saturday and Sunday.",
+        "options": [
+          {
+            "text": "Festival Timings",
+            "next": "festival_timings"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+
+  
+      "festival_timings": {
+        "node_id": "VI_3",
+        "message": "Temple hours may be extended during major festivals and celebrations. Please visit our temple calendar on our website, jkyog.org, for further information.",
+        "options": [
+          {
+            "text": "Upcoming Events",
+            "next": "events"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+  
+
+      "events": {
+        "node_id": "VI_4",
+        "message": "Upcoming temple events include weekly satsang, festival celebrations, and retreats.",
+        "options": [
+          {
+            "text": "Weekly Events",
+            "next": "weekly_events"
+          },  
+          {
+            "text": "More Event Details",
+            "next": "event_details"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+
+
+      "weekly_events": {
+        "node_id": "VI_5",
+        "message": "Darshan is available anytime the temple is open. Bhog is at 12 PM and 6:45 PM Monday through Friday. Aarti takes place at 12:15 PM and 7 PM everyday. There are Daily Bhajans from 7 PM to 8 PM. The Friday Special Satsang is from 7 PM to 8 PM and Sunday Satsang is from 10:30 AM to 12:30 PM.",
+        "options": [
+          {
+            "text": "More Event Details",
+            "next": "event_details"
+          },
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+  
+
+      "event_details": {
+        "node_id": "VI_6",
+        "message": "For other detailed event schedules, registrations, and services including classes and poojas, please visit the temple website, jkyog.org.",
+        "options": [
+          {
+            "text": "Weekly Events",
+            "next": "weekly_events"
+          },  
+          {
+            "text": "Back",
+            "next": "events"
+          }
+        ]
+      },
+  
+
+      "visitor_guidelines": {
+        "node_id": "VI_7",
+        "message": "Visitor Guidelines: Entry is free, please remove shoes before entering, modest attire is strongly recommended, and please place your phone on silent as the use of electronics are prohibited in the prayer hall.",
+        "options": [
+          {
+            "text": "Back",
+            "next": "start"
+          }
+        ]
+      },
+
+
+      "inactivity_handler": {
+        "node_id": "VI_8",
+        "timeout_seconds": 45,
+        "message": "It looks like you're away. I'll end this conversation now. Feel free to reach out anytime at jkyog.org.",
+        "next": "end"
+      },
+
+
+      "end": {
+        "node_id": "VI_9",
+        "message": "Thank you for contacting JKYog. Have a wonderful day!",
+        "options": []
+      }  
+    }
+  }
