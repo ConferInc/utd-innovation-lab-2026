@@ -1,0 +1,84 @@
+{
+    "source": "JKYog Radha Krishna Temple Dallas",
+    "updated_at": "2026-03-04",
+    "faqs": [
+        {
+            "id": "faq_location_access",
+            "intent": "faq_query",
+            "question": "Where is JKYog Radha Krishna Temple located?",
+            "answer": "The JKYog Radha Krishna Temple is located in Allen, Texas at '1450 North Watters Road, Allen, TX 75013' ",
+            "tags": [
+                "location",
+                "address",
+                "temple",
+                "allen",
+                "visit"
+            ],
+            "entities": {
+                "location": "Allen, Texas",
+                "address": "1450 North Watters Road, Allen, TX 75013"
+            }
+        },
+        {
+            "id": "faq_opening_hours",
+            "intent": "faq_query",
+            "question": "What are the opening hours of JKYog Radha Krishna Temple?",
+            "answer": "The JKYog Radha Krishna Temple is open from 9:30 AM to 1:00 PM & 5:30 PM to 8:30 PM, Monday through Friday and 9:30 AM to 8:30 PM on Saturday and Sunday.",
+            "tags": [
+                "opening hours",
+                "timings",
+                "temple",
+                "visit"
+            ],
+            "entities": {
+                "opening_hours": "9:30 AM to 1:00 PM & 5:30 PM to 8:30 PM on weekdays, 9:30 AM to 8:30 PM on weekends",
+                "days_open": "Monday through Sunday",
+                "days_closed": "None"
+            }
+        },
+        {
+            "id": "faq_dress_code",
+            "intent": "faq_query",
+            "question": "Is there a dress code for visiting JKYog Radha Krishna Temple?",
+            "answer": "Yes, visitors are expected to dress modestly when visiting the JKYog Radha Krishna Temple. It is recommended to wear clothing that covers the shoulders, chest and knees. It is also suggested to wear attire comfortable for yoga and satsang.",
+            "tags": [
+                "dress code",
+                "attire",
+                "temple",
+                "visit"
+            ],
+            "entities": {
+                "dress_code": "modest attire covering shoulders and knees",
+                "recommended_attire": "modest clothing comfortable for yoga and satsang."
+            }
+        },
+        {
+            "id": "faq_parking",
+            "intent": "faq_query",
+            "question": "Is parking available at JKYog Radha Krishna Temple?",
+            "answer": "Yes, there is ample parking available at the JKYog Radha Krishna Temple for visitors.",
+            "tags": [
+                "parking",
+                "facilities",
+                "temple",
+                "visit"
+            ],
+            "entities": {
+                "parking_availability": "ample parking available"
+            }
+        },
+        {
+            "id": "faq_core_philosophy",
+            "intent": "faq_query",
+            "question": "What core philosophy does JKYog Radha Krishna Temple follow?",
+            "answer": "The JKYog Radha Krishna Temple follows the path of Bhakti Yoga, the path of devotion to purify the heart, as taught by Swami Mukundananda.",
+            "tags": [
+                "core philosophy",
+                "bhakti yog",
+                "swami mukundananda",
+                "temple"
+            ],
+            "entities": {}
+        }
+    ]
+}
