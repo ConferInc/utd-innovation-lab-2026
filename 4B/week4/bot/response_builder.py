@@ -6,39 +6,34 @@ Orchestrates bot responses by routing to appropriate handlers based on intent
 and integrating with all teammate modules (knowledge base, database, integrations).
 """
 
-import sys
 from typing import Dict, Optional
 
-# Add parent directory to path for imports
-sys.path.insert(0, r'C:\Users\rohan\Downloads\Week3 Files')
+from .intent_classifier import classify_intent
+from .entity_extractor import extract_entities
 
-from bot.intent_classifier import classify_intent
-from bot.entity_extractor import extract_entities
-
-# Import teammate modules
 try:
-    from knowledge_base.ingestion import search_kb
+    from ..knowledge_base.ingestion import search_kb
 except ImportError:
     print("Warning: knowledge_base module not found")
     def search_kb(query, top_k=3):
         return []
 
 try:
-    from integrations.google_maps import get_temple_directions_from_user_location
+    from ..integrations.google_maps import get_temple_directions_from_user_location
 except ImportError:
     print("Warning: google_maps integration not found")
     def get_temple_directions_from_user_location(user_location, temple_address, mode="driving"):
-        return f"🗺️ Directions from {user_location} to {temple_address} (integration unavailable)"
+        return f"Directions from {user_location} to {temple_address} (integration unavailable)"
 
 try:
-    from integrations.stripe import get_donation_link
+    from ..integrations.stripe import get_donation_link
 except ImportError:
     print("Warning: stripe integration not found")
     def get_donation_link(temple_slug=None):
         return "https://buy.stripe.com/test_default"
 
 try:
-    from integrations.calendar import get_upcoming_events, get_events_on_date
+    from ..integrations.calendar import get_upcoming_events, get_events_on_date
 except ImportError:
     print("Warning: calendar integration not found")
     def get_upcoming_events(limit=5):
