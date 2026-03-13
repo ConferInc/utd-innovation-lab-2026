@@ -55,6 +55,18 @@ app = FastAPI(
 )
 
 
+def send_whatsapp_message(to: str, body: str) -> None:
+    """Send a text message to a WhatsApp user via Twilio."""
+    from twilio.rest import Client
+
+    client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+    client.messages.create(
+        from_=os.environ["TWILIO_WHATSAPP_FROM"],
+        body=body,
+        to=f"whatsapp:{to}",
+    )
+
+
 @app.get("/health")
 def health_check() -> Dict[str, str]:
     """
@@ -146,6 +158,12 @@ async def whatsapp_webhook(
             user_message=user_message,
             user_context=user_context,
         )
+
+        # Send the reply back to the user on WhatsApp via Twilio
+        try:
+            send_whatsapp_message(to=phone_number, body=bot_reply)
+        except Exception as send_err:
+            logger.error("Failed to send WhatsApp message: %s", send_err)
 
         # Update session context with latest interaction
         try:

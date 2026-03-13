@@ -8,7 +8,9 @@ from .session_manager import generate_session, validate_session
 
 async def verify_whatsapp_request(request: Request, db: Session = Depends(get_db)):
     """
-    FastAPI dependency/helper to authenticate incoming WhatsApp webhook requests.
+    FastAPI dependency/helper to authenticate incoming Twilio WhatsApp webhook requests.
+
+    Twilio sends form-encoded POST data with fields: From, Body, ProfileName.
 
     Returns:
         {
@@ -20,45 +22,27 @@ async def verify_whatsapp_request(request: Request, db: Session = Depends(get_db
             "profile_name": str | None
         }
 
-    If the payload contains no user message (e.g. read receipts), returns:
+    If the payload contains no user message (e.g. status callbacks), returns:
         {"status": "ignored"}
     """
-    # Parse JSON payload
+    # Twilio sends form-encoded data, not JSON
     try:
-        payload = await request.json()
+        form = await request.form()
     except Exception:
-        raise HTTPException(status_code=400, detail="Invalid JSON payload")
+        raise HTTPException(status_code=400, detail="Invalid form payload")
 
-    # Extract phone number, profile name, and message text from WhatsApp Cloud payload
     try:
-        entry = payload.get("entry", [{}])[0]
-        changes = entry.get("changes", [{}])[0]
-        value = changes.get("value", {})
-        messages = value.get("messages", [])
+        # Twilio prefixes numbers with "whatsapp:" e.g. "whatsapp:+1234567890"
+        from_field = form.get("From", "")
+        phone_number = from_field.replace("whatsapp:", "").strip()
 
-        # Ignore non-message events
-        if not messages:
+        if not phone_number:
             return {"status": "ignored"}
 
-        message = messages[0]
-        phone_number = message.get("from")
-        if not phone_number:
-            raise HTTPException(status_code=400, detail="Missing sender phone number")
+        profile_name = form.get("ProfileName") or None
+        message_text = (form.get("Body") or "").strip()
 
-        contacts = value.get("contacts", [])
-        profile_name = None
-        if contacts:
-            profile_name = contacts[0].get("profile", {}).get("name")
-
-        # Cloud API represents text as {"body": "..."}
-        message_text = (
-            message.get("text", {}).get("body")
-            if isinstance(message.get("text"), dict)
-            else None
-        )
-
-        if not message_text or not message_text.strip():
-            # No meaningful text to process
+        if not message_text:
             return {"status": "ignored"}
 
     except HTTPException:
@@ -66,7 +50,7 @@ async def verify_whatsapp_request(request: Request, db: Session = Depends(get_db
     except Exception as exc:
         raise HTTPException(
             status_code=400,
-            detail=f"Malformed WhatsApp payload: {exc}",
+            detail=f"Malformed Twilio payload: {exc}",
         )
 
     # Authenticate user + conversation
