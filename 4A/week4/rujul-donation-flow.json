@@ -1,0 +1,205 @@
+{
+    "donation_flow": {
+      "description": "Enhanced donation flow for JKYog voice bot",
+      "type": "object",
+  
+      "required": [
+        "donor_name",
+        "phone",
+        "email",
+        "donation_amount",
+        "recurring"
+      ],
+  
+      "properties": {
+  
+        "start": {
+          "type": "menu",
+          "message": "Hello, thank you for calling JKYog. How would you like to support the temple?",
+          "options": [
+            {
+              "text": "Make a Donation",
+              "next": "collect_donor_name"
+            },
+            {
+              "text": "Recurring Donations",
+              "next": "ask_recurring_interest"
+            },
+            {
+              "text": "Sponsorship Information",
+              "next": "sponsor_info"
+            },
+            {
+              "text": "Tax Receipts",
+              "next": "tax_receipts"
+            },
+            {
+              "text": "Speak to Front Desk Receptionist",
+              "next": "connect_receptionist"
+            }
+          ]
+        },
+  
+        "connect_receptionist": {
+          "type": "action",
+          "action": "transfer_call",
+          "department": "front_desk",
+          "message": "Please hold while I connect you with the temple front desk receptionist."
+        },
+  
+        "collect_donor_name": {
+          "type": "input",
+          "field": "donor_name",
+          "required": true,
+          "validation": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 100
+          },
+          "message": "May I have your full name for the donation?",
+          "next": "collect_phone"
+        },
+  
+        "collect_phone": {
+          "type": "input",
+          "field": "phone",
+          "required": true,
+          "validation": {
+            "type": "string",
+            "pattern": "^[0-9+\\-() ]{10,15}$"
+          },
+          "message": "Please provide your phone number.",
+          "next": "collect_email"
+        },
+  
+        "collect_email": {
+          "type": "input",
+          "field": "email",
+          "required": true,
+          "validation": {
+            "type": "string",
+            "format": "email"
+          },
+          "message": "What is your email address so we can send your donation receipt?",
+          "next": "amount_selection"
+        },
+  
+        "amount_selection": {
+          "type": "choice",
+          "field": "donation_amount",
+          "required": true,
+          "message": "How much would you like to donate today? You can choose 10, 25, 50, or 100 dollars, or say custom amount.",
+          "options": [
+            {
+              "label": "$10",
+              "value": 10,
+              "next": "ask_recurring_interest"
+            },
+            {
+              "label": "$25",
+              "value": 25,
+              "next": "ask_recurring_interest"
+            },
+            {
+              "label": "$50",
+              "value": 50,
+              "next": "ask_recurring_interest"
+            },
+            {
+              "label": "$100",
+              "value": 100,
+              "next": "ask_recurring_interest"
+            },
+            {
+              "label": "Custom Amount",
+              "value": "custom",
+              "next": "custom_amount"
+            }
+          ]
+        },
+  
+        "custom_amount": {
+          "type": "input",
+          "field": "donation_amount",
+          "required": true,
+          "validation": {
+            "type": "number",
+            "minimum": 1,
+            "maximum": 10000
+          },
+          "message": "What amount would you like to donate?",
+          "next": "ask_recurring_interest"
+        },
+  
+        "ask_recurring_interest": {
+          "type": "choice",
+          "field": "recurring",
+          "required": true,
+          "message": "Would you like to make this a recurring monthly donation?",
+          "options": [
+            {
+              "label": "Yes",
+              "value": true,
+              "next": "confirm_donation"
+            },
+            {
+              "label": "No",
+              "value": false,
+              "next": "confirm_donation"
+            }
+          ]
+        },
+  
+        "confirm_donation": {
+          "type": "confirmation",
+          "message": "You are donating {{donation_amount}} dollars. Would you like me to send you the secure payment link to complete your donation?",
+          "options": [
+            {
+              "label": "Yes",
+              "next": "payment_redirect"
+            },
+            {
+              "label": "Cancel",
+              "next": "start"
+            }
+          ]
+        },
+  
+        "payment_redirect": {
+          "type": "action",
+          "action": "redirect",
+          "message": "Thank you. I am sending you a secure payment link to complete your donation.",
+          "url_template": "https://donate.jkyog.org/pay?amount={{donation_amount}}&recurring={{recurring}}&frequency=monthly",
+          "next": "receipt_confirmation"
+        },
+  
+        "receipt_confirmation": {
+          "type": "message",
+          "message": "Once your payment is completed, a confirmation and tax receipt will be sent to your email. Thank you for supporting JKYog. We look forward to seeing you soon!"
+        },
+  
+        "sponsor_info": {
+          "type": "message",
+          "message": "Donations can also be made through specific sponsorship programs that support temple events and services. Please check the temple calendar to view upcoming sponsorship events.",
+          "options": [
+            {
+              "label": "Back",
+              "next": "start"
+            }
+          ]
+        },
+  
+        "tax_receipts": {
+          "type": "message",
+          "message": "Receipts are automatically emailed after a successful donation. If you need past or specific tax receipts, please contact the temple office receptionist.",
+          "options": [
+            {
+              "label": "Back",
+              "next": "start"
+            }
+          ]
+        }
+  
+      }
+    }
+  }
