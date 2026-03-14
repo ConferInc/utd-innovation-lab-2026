@@ -11,11 +11,13 @@ import googlemaps
 
 load_dotenv()
 
-GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY")
+GOOGLE_MAPS_API_KEY = (os.getenv("GOOGLE_MAPS_API_KEY") or "").strip()
+_client = None
 if GOOGLE_MAPS_API_KEY:
-    _client = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
-else:
-    _client = None
+    try:
+        _client = googlemaps.Client(key=GOOGLE_MAPS_API_KEY)
+    except ValueError:
+        _client = None
 
 
 def _strip_html(html: str) -> str:
