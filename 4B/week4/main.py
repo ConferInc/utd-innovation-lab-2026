@@ -60,10 +60,12 @@ def send_whatsapp_message(to: str, body: str) -> None:
     from twilio.rest import Client
 
     client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
+    # Ensure E.164 format — phone_verification.py strips the leading +
+    to_e164 = to if to.startswith("+") else f"+{to}"
     client.messages.create(
         from_=os.environ["TWILIO_WHATSAPP_FROM"],
         body=body,
-        to=f"whatsapp:{to}",
+        to=f"whatsapp:{to_e164}",
     )
 
 
