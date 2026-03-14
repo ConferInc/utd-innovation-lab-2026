@@ -1,6 +1,9 @@
 import os
+from pathlib import Path
 from typing import Generator
 
+from alembic import command
+from alembic.config import Config
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -58,7 +61,9 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Create all database tables registered on the SQLAlchemy metadata."""
-    from . import schema  # noqa: F401
-
-    Base.metadata.create_all(bind=engine)
+    """Run Alembic migrations to bring the database schema up to date."""
+    alembic_ini = Path(__file__).resolve().parent.parent / "alembic.ini"
+    if not alembic_ini.is_file():
+        raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
+    cfg = Config(str(alembic_ini))
+    command.upgrade(cfg, "head")
