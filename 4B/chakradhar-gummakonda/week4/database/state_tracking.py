@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 from sqlalchemy.orm import Session
 
-from .schema import Conversation, Message, SessionState, User
+from database.schema import Conversation, Message, SessionState, User
 
 
 def _now() -> datetime:

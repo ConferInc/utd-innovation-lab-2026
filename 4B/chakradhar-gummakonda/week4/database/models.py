@@ -1,9 +1,6 @@
 import os
-from pathlib import Path
 from typing import Generator
 
-from alembic import command
-from alembic.config import Config
 from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import Session, declarative_base, sessionmaker
 
@@ -61,14 +58,7 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Run Alembic migrations to bring the database schema up to date."""
-    week4_dir = Path(__file__).resolve().parent.parent
-    alembic_ini = week4_dir / "alembic.ini"
-    if not alembic_ini.is_file():
-        raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
-    cfg = Config(str(alembic_ini))
-    # Override script_location with an absolute path so Alembic finds the
-    # migrations folder regardless of the process working directory (e.g. on Render
-    # the CWD is /opt/render/project/src, not 4B/week4/).
-    cfg.set_main_option("script_location", str(week4_dir / "migrations"))
-    command.upgrade(cfg, "head")
+    """Create all database tables registered on the SQLAlchemy metadata."""
+    from database import schema  # noqa: F401
+
+    Base.metadata.create_all(bind=engine)

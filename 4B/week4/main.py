@@ -12,20 +12,16 @@ import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
 
-from dotenv import load_dotenv
-
-load_dotenv()
-
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from .authentication.auth import verify_whatsapp_request
-from .authentication.session_manager import update_session_context
-from .bot.intent_classifier import classify_intent
-from .bot.response_builder import build_response
-from .database.models import get_db, init_db
-from .database.state_tracking import log_message
+from authentication.auth import verify_whatsapp_request
+from authentication.session_manager import update_session_context
+from bot.intent_classifier import classify_intent
+from bot.response_builder import build_response
+from database.models import get_db, init_db
+from database.state_tracking import log_message
 
 
 logging.basicConfig(
@@ -42,8 +38,12 @@ async def lifespan(app: FastAPI):
     Initializes the database before serving requests.
     """
     logger.info("Initializing database...")
-    init_db()
-    logger.info("Database initialized successfully.")
+    try:
+        init_db()
+        logger.info("Database initialized successfully.")
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.error("Database initialization failed: %s", exc)
+        # Continue running so non-DB paths can still function if needed.
     yield
     logger.info("Application shutdown complete.")
 
@@ -53,27 +53,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
-# Integration clients for test/demo endpoints (Subodh)
-from .integrations import StripeIntegration, GoogleMapsIntegration, GoogleCalendarIntegration
-
-stripe_client = StripeIntegration()
-maps_client = GoogleMapsIntegration()
-calendar_client = GoogleCalendarIntegration()
-
-
-def send_whatsapp_message(to: str, body: str) -> None:
-    """Send a text message to a WhatsApp user via Twilio."""
-    from twilio.rest import Client
-
-    client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
-    # Ensure E.164 format — phone_verification.py strips the leading +
-    to_e164 = to if to.startswith("+") else f"+{to}"
-    client.messages.create(
-        from_=os.environ["TWILIO_WHATSAPP_FROM"],
-        body=body,
-        to=f"whatsapp:{to_e164}",
-    )
 
 
 @app.get("/health")
@@ -90,25 +69,6 @@ def root() -> Dict[str, str]:
     Root endpoint to confirm the bot is running.
     """
     return {"message": "JKYog WhatsApp Bot is running"}
-
-
-@app.post("/create-payment")
-def create_payment() -> Dict[str, Any]:
-    """Create a Stripe payment intent (demo). Returns client_secret for client-side confirm."""
-    intent = stripe_client.create_payment_intent(amount=1000)
-    return {"client_secret": getattr(intent, "client_secret", None)}
-
-
-@app.get("/maps")
-def maps_test() -> Any:
-    """Test Google Maps geocode (Dallas)."""
-    return maps_client.geocode("Dallas")
-
-
-@app.get("/calendar")
-def calendar_test() -> Any:
-    """Test Google Calendar / KB upcoming events."""
-    return calendar_client.list_events()
 
 
 @app.post("/webhook/whatsapp")
@@ -154,25 +114,23 @@ async def whatsapp_webhook(
             conversation.id,
         )
 
+        # Log inbound message with optional pre-classified intent
         inbound_intent: Optional[str] = None
-        inbound_confidence: Optional[float] = None
         try:
-            intent_result = classify_intent(user_message)
-            inbound_intent = intent_result.get("intent")
-            inbound_confidence = intent_result.get("confidence")
+            inbound_intent = classify_intent(user_message).get("intent")
         except Exception as classify_err:
-            logger.warning("Intent classification failed: %s", classify_err)
-
-        try:
-            log_message(
-                db=db,
-                conversation_id=conversation.id,
-                direction="inbound",
-                text=user_message,
-                intent=inbound_intent,
+            logger.warning(
+                "Intent classification failed before logging: %s",
+                classify_err,
             )
-        except Exception as log_err:
-            logger.error("Failed to log inbound message: %s", log_err, exc_info=True)
+
+        log_message(
+            db=db,
+            conversation_id=conversation.id,
+            direction="inbound",
+            text=user_message,
+            intent=inbound_intent,
+        )
 
         # Build response from bot core
         user_context: Dict[str, Any] = {
@@ -187,19 +145,7 @@ async def whatsapp_webhook(
         bot_reply = build_response(
             user_message=user_message,
             user_context=user_context,
-            intent=inbound_intent,
-            confidence=inbound_confidence,
         )
-
-        # Send the reply back to the user on WhatsApp via Twilio
-        try:
-            send_whatsapp_message(to=phone_number, body=bot_reply)
-            logger.info("WhatsApp message sent to %s", phone_number)
-        except Exception as send_err:
-            logger.error(
-                "Failed to send WhatsApp message to %s: %s",
-                phone_number, send_err, exc_info=True,
-            )
 
         # Update session context with latest interaction
         try:
@@ -213,19 +159,16 @@ async def whatsapp_webhook(
                 },
             )
         except Exception as session_err:
-            logger.error("Session context update failed: %s", session_err, exc_info=True)
+            logger.warning("Session context update failed: %s", session_err)
 
         # Log outbound message
-        try:
-            log_message(
-                db=db,
-                conversation_id=conversation.id,
-                direction="outbound",
-                text=bot_reply,
-                intent=inbound_intent,
-            )
-        except Exception as log_err:
-            logger.error("Failed to log outbound message: %s", log_err, exc_info=True)
+        log_message(
+            db=db,
+            conversation_id=conversation.id,
+            direction="outbound",
+            text=bot_reply,
+            intent=inbound_intent,
+        )
 
         logger.info(
             "Response generated | user_id=%s | conversation_id=%s",

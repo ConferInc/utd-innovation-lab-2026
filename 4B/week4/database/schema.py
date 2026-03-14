@@ -1,5 +1,3 @@
-#database/schema.py
-
 import uuid
 from datetime import datetime, timezone
 
@@ -7,7 +5,7 @@ from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
-from .models import Base
+from database.models import Base
 
 
 def _now() -> datetime:
