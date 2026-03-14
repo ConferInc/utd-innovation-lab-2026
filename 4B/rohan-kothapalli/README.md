@@ -27,6 +27,7 @@
 
 ## Quick Links
 
+- [Week 4 — Gemini 404 fix](week4-gemini-fix.md)
 - [Group 4B Workspace](../README.md)
 - [Weekly Summary Template](../../WEEKLY_TEMPLATE.md)
 - [Standards & Conventions](../../STANDARDS.md)

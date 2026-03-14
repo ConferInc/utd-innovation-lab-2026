@@ -76,7 +76,7 @@ def _generate_with_gemini(user_message: str, context: str) -> str | None:
     try:
         genai.configure(api_key=os.getenv("GOOGLE_API_KEY"))
         model = genai.GenerativeModel(
-            "gemini-1.5-flash",
+            os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             system_instruction=_BOT_SYSTEM_PROMPT,
         )
         prompt = f"Context:\n{context}\n\nUser message: {user_message}"

@@ -69,7 +69,7 @@ def _classify_with_gemini(user_message: str) -> Dict[str, object] | None:
         return None
     try:
         model = genai.GenerativeModel(
-            "gemini-1.5-flash",
+            os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
             system_instruction=_SYSTEM_PROMPT,
         )
         response = model.generate_content(
