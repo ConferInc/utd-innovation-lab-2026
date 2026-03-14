@@ -27,3 +27,22 @@ def get_donation_link(temple_slug: Optional[str] = None) -> str:
             return link
     
     return DONATION_LINKS["default"] + "\n\n💝 Thank you for your support!"
+
+
+class StripeIntegration:
+    """Stripe integration for payment intents and donation links."""
+
+    def create_payment_intent(self, amount: int, currency: str = "usd") -> object:
+        """Create a Stripe PaymentIntent. Returns an object with client_secret.
+        Requires STRIPE_SECRET_KEY in env. If not set, returns a placeholder.
+        """
+        secret = os.getenv("STRIPE_SECRET_KEY")
+        if not secret:
+            return type("Intent", (), {"client_secret": None})()
+        try:
+            import stripe
+            stripe.api_key = secret
+            intent = stripe.PaymentIntent.create(amount=amount, currency=currency)
+            return intent
+        except Exception:
+            return type("Intent", (), {"client_secret": None})()

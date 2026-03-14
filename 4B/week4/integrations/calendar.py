@@ -97,3 +97,11 @@ def get_events_on_date(date_str: str) -> List[Dict]:
             continue
     
     return filtered
+
+
+class GoogleCalendarIntegration:
+    """Google Calendar API + knowledge base fallback integration."""
+
+    def list_events(self, limit: int = 5) -> List[Dict]:
+        """List upcoming events (API first, then KB fallback)."""
+        return get_upcoming_events(limit=limit)

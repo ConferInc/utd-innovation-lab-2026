@@ -60,3 +60,16 @@ def get_temple_directions_from_user_location(
 ) -> str:
     """Rohan's bot entrypoint - user location → temple"""
     return get_directions_text(origin=user_location, destination=temple_address, mode=mode)
+
+
+class GoogleMapsIntegration:
+    """Google Maps API integration for geocoding and directions."""
+
+    def geocode(self, address: str) -> List[Dict[str, Any]]:
+        """Return geocode results for an address. Empty list if API key missing or on error."""
+        if not _client:
+            return []
+        try:
+            return _client.geocode(address) or []
+        except Exception:
+            return []

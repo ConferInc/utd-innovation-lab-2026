@@ -1,275 +1,135 @@
 """
 Intent Classifier for JKYog WhatsApp Bot
-Rohan Kothapalli - Week 3 Assignment
 
-Classifies user messages into intents using OpenAI text-embedding-3-small
-with keyword fallback for when API is unavailable.
+Classifies user messages into intents using Gemini zero-shot classification
+with a keyword regex fallback for when the Google API is unavailable.
 """
 
+import json
 import os
 import re
-from typing import Dict, List, Tuple
+from typing import Dict
 
-import numpy as np
 from dotenv import load_dotenv
 
 try:
-    from openai import OpenAI
-    OPENAI_AVAILABLE = True
+    from google import genai
+    from google.genai import types as genai_types
+    GOOGLE_AVAILABLE = True
 except ImportError:
-    OPENAI_AVAILABLE = False
-    print("Warning: OpenAI not available, using keyword fallback only")
+    GOOGLE_AVAILABLE = False
 
-# Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-client = None
-if OPENAI_AVAILABLE and os.getenv("OPENAI_API_KEY"):
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+_SYSTEM_PROMPT = """You are an intent classifier for a WhatsApp bot for JKYog Radha Krishna Temple.
 
-# Intent definitions with training examples
-INTENT_EXAMPLES = {
-    "faq_query": [
-        "Where is the temple located?",
-        "What are the temple hours?",
-        "Is there a dress code?",
-        "Is parking available?",
-        "What is the temple address?",
-        "When is the temple open?",
-        "What should I wear to the temple?",
-        "Can I park at the temple?",
-        "What philosophy does JKYog follow?",
-        "Tell me about the temple location",
+Classify the user message into exactly one of these intents:
+- greeting: greetings or salutations (Hello, Hi, Namaste, Hari Om, Radhe Radhe, Good morning, etc.)
+- faq_query: questions about temple information such as location, address, hours, dress code, parking, or philosophy
+- event_query: questions about events, schedules, or timings (satsang, bhajans, Holi Mela, kirtan, meditation, calendar)
+- donation_request: anything about donating, contributing, or making a payment to the temple
+- directions_request: asking how to get to the temple, navigation, routes, or directions
+- unknown: anything that does not fit the above categories
+
+Respond ONLY with valid JSON in this exact format (no explanation, no markdown):
+{"intent": "<intent>", "confidence": <float between 0.0 and 1.0>}"""
+
+# Keyword patterns used as fallback when Google API is unavailable
+_KEYWORD_PATTERNS = {
+    "greeting": [
+        r"\b(hello|hi|hey|namaste|greetings?|good (morning|evening|afternoon|night))\b",
+        r"\b(hari om|radhe radhe|jai shri ram|jai radhe)\b",
     ],
     "event_query": [
-        "When is the next satsang?",
-        "What time is Friday satsang?",
-        "Tell me about Holi Mela",
-        "Are there any upcoming events?",
-        "When are the bhajans?",
-        "What events are happening this week?",
-        "Sunday satsang timings",
-        "Daily meditation schedule",
-        "Event calendar",
+        r"\b(satsang|bhajan|mela|holi|kirtan|meditation|schedule|calendar|event)\b",
+        r"\b(when|what time|upcoming|next)\b.{0,30}\b(temple|event|satsang|bhajan)\b",
     ],
     "donation_request": [
-        "How do I donate?",
-        "I want to make a donation",
-        "Can I contribute?",
-        "Payment link for donation",
-        "Support the temple",
-        "How to give donation?",
-        "I want to help financially",
+        r"\b(donat(e|ion)|contribut(e|ion)|payment|give|fund|help financially|support the temple)\b",
     ],
     "directions_request": [
-        "How do I get to the temple?",
-        "Directions to the temple",
-        "Where is the temple from Dallas?",
-        "How to reach the temple?",
-        "Route to JKYog temple",
-        "Navigation to temple",
-        "Directions from Irving",
+        r"\b(direction|route|navigation|how (do i|to) (get|reach)|way to get|miles from)\b",
+        r"\b(get to|drive to|from (dallas|irving|plano|frisco|mckinney))\b",
     ],
-    "greeting": [
-        "Hello",
-        "Hi",
-        "Hey",
-        "Namaste",
-        "Good morning",
-        "Good evening",
-        "Hari Om",
-        "Radhe Radhe",
+    "faq_query": [
+        r"\b(location|address|hours?|timings?|open|close|dress code|parking|philosophy|bhakti)\b",
+        r"\b(when (does|is) the temple|what (are|is) the temple)\b",
     ],
 }
 
-# Keyword patterns for fallback
-KEYWORD_PATTERNS = {
-    "faq_query": [
-        r"\b(where|location|address|hours?|timings?|open|close|dress code|parking|philosophy)\b",
-        r"\b(temple|visit|visiting)\b",
-    ],
-    "event_query": [
-        r"\b(satsang|event|bhajan|mela|holi|meditation|kirtan|schedule|calendar)\b",
-        r"\b(when|what time|upcoming|next|today|tomorrow)\b",
-    ],
-    "donation_request": [
-        r"\b(donat(e|ion)|contribut(e|ion)|payment|support|give|fund|help financially)\b",
-    ],
-    "directions_request": [
-        r"\b(direction|route|navigation|how to (get|reach)|way to|from)\b",
-        r"\b(temple|location)\b",
-    ],
-    "greeting": [
-        r"\b(hello|hi|hey|namaste|greetings?|good (morning|evening|afternoon))\b",
-        r"\b(hari om|radhe radhe)\b",
-    ],
-}
-
-# Cache for embeddings
-_embedding_cache: Dict[str, List[Tuple[str, np.ndarray]]] = {}
+_VALID_INTENTS = {"greeting", "faq_query", "event_query", "donation_request", "directions_request", "unknown"}
 
 
-def _get_embedding(text: str) -> np.ndarray:
-    """Get embedding for a text using OpenAI API."""
-    if not client:
+def _classify_with_gemini(user_message: str) -> Dict[str, object] | None:
+    """Classify intent using Gemini. Returns None if unavailable or on error."""
+    if not GOOGLE_AVAILABLE or not os.getenv("GOOGLE_API_KEY"):
         return None
-    
     try:
-        response = client.embeddings.create(
-            model="text-embedding-3-small",
-            input=text
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
+            contents=user_message,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=_SYSTEM_PROMPT,
+                temperature=0,
+                max_output_tokens=60,
+            ),
         )
-        return np.array(response.data[0].embedding)
-    except Exception as e:
-        print(f"Error getting embedding: {e}")
+        raw = response.text.strip()
+        result = json.loads(raw)
+        intent = result.get("intent", "unknown")
+        confidence = float(result.get("confidence", 0.0))
+        if intent not in _VALID_INTENTS:
+            intent = "unknown"
+        return {"intent": intent, "confidence": confidence}
+    except Exception as exc:
+        print(f"Gemini classification error: {exc}")
         return None
 
 
-def _cosine_similarity(a: np.ndarray, b: np.ndarray) -> float:
-    """Calculate cosine similarity between two vectors."""
-    return np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b))
-
-
-def _initialize_embeddings():
-    """Pre-compute embeddings for all training examples."""
-    global _embedding_cache
-    
-    if not client or _embedding_cache:
-        return
-    
-    print("Initializing intent classifier embeddings...")
-    for intent, examples in INTENT_EXAMPLES.items():
-        _embedding_cache[intent] = []
-        for example in examples:
-            embedding = _get_embedding(example)
-            if embedding is not None:
-                _embedding_cache[intent].append((example, embedding))
-    
-    print(f"Loaded embeddings for {len(_embedding_cache)} intent types")
-
-
-def _classify_with_embeddings(user_message: str) -> Dict[str, any]:
-    """Classify intent using OpenAI embeddings."""
-    if not _embedding_cache:
-        _initialize_embeddings()
-    
-    if not _embedding_cache:
-        return None
-    
-    # Get embedding for user message
-    message_embedding = _get_embedding(user_message)
-    if message_embedding is None:
-        return None
-    
-    # Find best matching intent
-    best_intent = "unknown"
-    best_score = 0.0
-    
-    for intent, examples in _embedding_cache.items():
-        for example_text, example_embedding in examples:
-            similarity = _cosine_similarity(message_embedding, example_embedding)
-            if similarity > best_score:
-                best_score = similarity
-                best_intent = intent
-    
-    return {
-        "intent": best_intent,
-        "confidence": float(best_score)
-    }
-
-
-def _classify_with_keywords(user_message: str) -> Dict[str, any]:
-    """Classify intent using keyword patterns (fallback)."""
+def _classify_with_keywords(user_message: str) -> Dict[str, object]:
+    """Classify intent using keyword regex patterns (fallback)."""
     message_lower = user_message.lower()
-    
-    intent_scores = {}
-    
-    for intent, patterns in KEYWORD_PATTERNS.items():
-        score = 0
-        for pattern in patterns:
-            matches = re.findall(pattern, message_lower, re.IGNORECASE)
-            score += len(matches)
-        
+    scores: Dict[str, int] = {}
+
+    for intent, patterns in _KEYWORD_PATTERNS.items():
+        score = sum(len(re.findall(p, message_lower, re.IGNORECASE)) for p in patterns)
         if score > 0:
-            intent_scores[intent] = score
-    
-    if not intent_scores:
-        return {
-            "intent": "unknown",
-            "confidence": 0.0
-        }
-    
-    # Get intent with highest score
-    best_intent = max(intent_scores, key=intent_scores.get)
-    max_score = intent_scores[best_intent]
-    
-    # Normalize confidence (keyword matching is less confident than embeddings)
-    confidence = min(0.6, 0.3 + (max_score * 0.1))
-    
-    return {
-        "intent": best_intent,
-        "confidence": float(confidence)
-    }
+            scores[intent] = score
+
+    if not scores:
+        return {"intent": "unknown", "confidence": 0.0}
+
+    best_intent = max(scores, key=scores.get)
+    # Cap confidence lower than Gemini to signal it's a fallback result
+    confidence = min(0.55, 0.35 + scores[best_intent] * 0.1)
+    return {"intent": best_intent, "confidence": confidence}
 
 
-def classify_intent(user_message: str) -> Dict[str, any]:
+def classify_intent(user_message: str) -> Dict[str, object]:
     """
-    Classify user message into an intent category.
-    
-    Uses OpenAI text-embedding-3-small for semantic matching with fallback
-    to keyword-based classification if API is unavailable.
-    
+    Classify a user message into an intent category.
+
+    Tries Gemini first for accurate zero-shot classification.
+    Falls back to keyword matching if the API is unavailable or errors.
+
     Args:
-        user_message: The user's input message
-    
+        user_message: The raw text message from the user.
+
     Returns:
-        Dictionary with:
-        - intent: One of faq_query, event_query, donation_request, 
-                  directions_request, greeting, unknown
-        - confidence: Float between 0.0 and 1.0
-    
-    Example:
-        >>> classify_intent("Where is the temple?")
-        {"intent": "faq_query", "confidence": 0.85}
+        {"intent": str, "confidence": float}
+        intent is one of: greeting, faq_query, event_query,
+                          donation_request, directions_request, unknown
     """
     if not user_message or not user_message.strip():
-        return {
-            "intent": "unknown",
-            "confidence": 0.0
-        }
-    
-    # Try embeddings first
-    result = _classify_with_embeddings(user_message)
-    
-    # Fall back to keywords if embeddings fail
+        return {"intent": "unknown", "confidence": 0.0}
+
+    result = _classify_with_gemini(user_message)
+
     if result is None:
         result = _classify_with_keywords(user_message)
-    
-    # If confidence is too low, mark as unknown
-    if result["confidence"] < 0.3:
+
+    if result["confidence"] < 0.4:
         result["intent"] = "unknown"
-    
+
     return result
-
-
-if __name__ == "__main__":
-    # Test the intent classifier
-    test_messages = [
-        "Where is the temple located?",
-        "What time is Friday satsang?",
-        "How do I donate?",
-        "Directions from Irving",
-        "Hello",
-        "What's the weather like?",
-        "When does the temple open?",
-        "Tell me about Holi Mela",
-    ]
-    
-    print("\n=== Intent Classifier Test ===\n")
-    for message in test_messages:
-        result = classify_intent(message)
-        print(f"Message: {message}")
-        print(f"Intent: {result['intent']}")
-        print(f"Confidence: {result['confidence']:.2f}")
-        print()

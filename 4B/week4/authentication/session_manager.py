@@ -1,7 +1,7 @@
 # auth/session_manager.py
 import uuid
 from sqlalchemy.orm import Session
-from database.state_tracking import create_session, get_session_by_token, merge_session_state
+from ..database.state_tracking import create_session, get_session_by_token, merge_session_state
 
 def generate_session(db: Session, user_id: uuid.UUID, ttl_minutes: int = 1440):
     """
