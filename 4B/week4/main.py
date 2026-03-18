@@ -11,7 +11,6 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from typing import Any, Dict, Optional
-from auth import TwilioAuthMiddleware
 
 from dotenv import load_dotenv
 
@@ -54,7 +53,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-app.add_middleware(TwilioAuthMiddleware)
 
 # Integration clients for test/demo endpoints (Subodh)
 from .integrations import StripeIntegration, GoogleMapsIntegration, GoogleCalendarIntegration
