@@ -1,0 +1,131 @@
+{
+  "test_config": {
+    "url": "http://127.0.0.1:8000/health/db",
+    "warmup": 5,
+    "burst": 50,
+    "concurrency": 10,
+    "sustained_rounds": 3,
+    "idle_seconds": 30.0,
+    "post_idle": 5,
+    "rapid_burst": 20
+  },
+  "expected_pool_settings": {
+    "pool_size": "5",
+    "max_overflow": "2",
+    "pool_timeout": "30",
+    "pool_recycle": "300",
+    "pool_pre_ping": true,
+    "pool_use_lifo": true
+  },
+  "phases": {
+    "warmup": {
+      "total_requests": 5,
+      "successes": 5,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 5
+      },
+      "latency_ms": {
+        "min": 304.83,
+        "max": 473.9,
+        "mean": 385.67,
+        "median": 404.57,
+        "p95": 473.9,
+        "p99": 473.9,
+        "stddev": 75.28
+      }
+    },
+    "burst": {
+      "total_requests": 50,
+      "successes": 50,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 50
+      },
+      "latency_ms": {
+        "min": 314.29,
+        "max": 1344.01,
+        "mean": 553.97,
+        "median": 502.2,
+        "p95": 1023.99,
+        "p99": 1344.01,
+        "stddev": 277.01
+      }
+    },
+    "sustained": {
+      "total_requests": 75,
+      "successes": 75,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 75
+      },
+      "latency_ms": {
+        "min": 307.37,
+        "max": 939.47,
+        "mean": 532.16,
+        "median": 443.48,
+        "p95": 929.93,
+        "p99": 939.47,
+        "stddev": 199.07
+      }
+    },
+    "post_idle": {
+      "total_requests": 5,
+      "successes": 5,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 5
+      },
+      "latency_ms": {
+        "min": 408.98,
+        "max": 619.99,
+        "mean": 492.65,
+        "median": 511.73,
+        "p95": 619.99,
+        "p99": 619.99,
+        "stddev": 87.58
+      }
+    },
+    "rapid_reconnect": {
+      "total_requests": 20,
+      "successes": 20,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 20
+      },
+      "latency_ms": {
+        "min": 399.72,
+        "max": 1003.35,
+        "mean": 644.02,
+        "median": 532.42,
+        "p95": 1003.35,
+        "p99": 1003.35,
+        "stddev": 210.42
+      }
+    }
+  },
+  "overall": {
+    "total_requests": 155,
+    "successes": 155,
+    "failures": 0,
+    "success_rate_pct": 100.0,
+    "status_counts": {
+      "200": 155
+    },
+    "latency_ms": {
+      "min": 304.83,
+      "max": 1344.01,
+      "mean": 547.63,
+      "median": 473.9,
+      "p95": 1003.35,
+      "p99": 1265.9,
+      "stddev": 227.05
+    }
+  },
+  "total_elapsed_ms": 47506.13
+}
