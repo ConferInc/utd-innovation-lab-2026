@@ -71,7 +71,7 @@ def _classify_with_gemini(user_message: str) -> Dict[str, object] | None:
     try:
         client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL_INTENT", "gemini-3.1-flash-lite"),
+            model=os.getenv("GEMINI_MODEL_INTENT", "gemini-2.5-flash-lite"),
             contents=user_message,
             config=genai_types.GenerateContentConfig(
                 system_instruction=_SYSTEM_PROMPT,
