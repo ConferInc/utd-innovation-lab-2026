@@ -62,12 +62,16 @@ _VALID_INTENTS = {"greeting", "faq_query", "event_query", "donation_request", "d
 
 def _classify_with_gemini(user_message: str) -> Dict[str, object] | None:
     """Classify intent using Gemini. Returns None if unavailable or on error."""
+    # Week 5 performance: keep overall to ONE Gemini call per message by default.
+    # Enable Gemini intent classification only if explicitly requested via env.
+    if os.getenv("ENABLE_GEMINI_INTENT", "0") not in {"1", "true", "True", "yes", "YES"}:
+        return None
     if not GOOGLE_AVAILABLE or not os.getenv("GOOGLE_API_KEY"):
         return None
     try:
         client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL_INTENT", "gemini-2.0-flash-lite"),
+            model=os.getenv("GEMINI_MODEL_INTENT", "gemini-2.5-flash-lite"),
             contents=user_message,
             config=genai_types.GenerateContentConfig(
                 system_instruction=_SYSTEM_PROMPT,
@@ -110,8 +114,9 @@ def classify_intent(user_message: str) -> Dict[str, object]:
     """
     Classify a user message into an intent category.
 
-    Tries Gemini first for accurate zero-shot classification.
-    Falls back to keyword matching if the API is unavailable or errors.
+    Uses keyword matching by default for performance and quota stability.
+    If ENABLE_GEMINI_INTENT is set, tries Gemini first for zero-shot classification,
+    and falls back to keyword matching if the API is unavailable or errors.
 
     Args:
         user_message: The raw text message from the user.
