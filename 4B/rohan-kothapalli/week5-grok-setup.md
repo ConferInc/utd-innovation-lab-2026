@@ -55,7 +55,7 @@ Intent classification notes:
 
 Optional overrides:
 - `XAI_MODEL=grok-3-mini`
-- `XAI_BASE_URL=https://api.x.ai/v1/chat/completions`
+- `XAI_BASE_URL=https://api.x.ai/v1/responses`
 - `LLM_TIMEOUT_S=15`
 
 ---

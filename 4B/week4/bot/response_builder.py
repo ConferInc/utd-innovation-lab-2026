@@ -101,8 +101,11 @@ def _generate_with_gemini(user_message: str, context: str) -> str | None:
 
 def _generate_with_grok(user_message: str, context: str) -> str | None:
     """
-    Generate a conversational response using xAI Grok (OpenAI-compatible chat API style).
+    Generate a conversational response using xAI Grok via the /v1/responses endpoint.
     Returns None if unavailable or errors.
+
+    Endpoint: https://api.x.ai/v1/responses
+    Ref: https://docs.x.ai/developers/quickstart
     """
     if not _HTTPX_AVAILABLE:
         return None
@@ -111,7 +114,7 @@ def _generate_with_grok(user_message: str, context: str) -> str | None:
     if not api_key:
         return None
 
-    base_url = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1/chat/completions").strip()
+    base_url = os.getenv("XAI_BASE_URL", "https://api.x.ai/v1/responses").strip()
     model = os.getenv("XAI_MODEL", "grok-3-mini").strip()
     timeout_s = float(os.getenv("LLM_TIMEOUT_S", "15"))
 
@@ -123,7 +126,7 @@ def _generate_with_grok(user_message: str, context: str) -> str | None:
     }
     payload = {
         "model": model,
-        "messages": [
+        "input": [
             {"role": "system", "content": _BOT_SYSTEM_PROMPT},
             {"role": "user", "content": prompt},
         ],
@@ -135,14 +138,8 @@ def _generate_with_grok(user_message: str, context: str) -> str | None:
             r = client.post(base_url, headers=headers, json=payload)
             r.raise_for_status()
             data = r.json()
-        return (
-            data.get("choices", [{}])[0]
-            .get("message", {})
-            .get("content", "")
-            .strip()
-        ) or None
+        return (data.get("output_text", "") or "").strip() or None
     except Exception as exc:
-        # Keep this consistent with the Gemini error style so Render logs are readable.
         print(f"Grok response generation error: {exc}")
         return None
 
