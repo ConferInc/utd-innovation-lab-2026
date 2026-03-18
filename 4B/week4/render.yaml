@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: jkyog-whatsapp-bot-week4
+    env: python
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r 4B/week4/requirements.txt
+    startCommand: |
+      uvicorn 4B.week4.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+

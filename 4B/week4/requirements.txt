@@ -1,0 +1,26 @@
+fastapi>=0.115.0
+uvicorn[standard]>=0.30.0
+python-multipart>=0.0.9
+
+# Core environment / config
+python-dotenv>=1.0.0
+
+# Bot core (intent classifier)
+google-genai
+
+# Database (Postgres via SQLAlchemy)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.0
+alembic>=1.13.0
+
+# Twilio (if you call Twilio APIs directly)
+twilio>=8.10.0
+
+# Stripe (payment intents; donation links are URL-only)
+stripe>=8.0.0
+
+# Google Maps / Calendar integrations
+googlemaps>=4.10.0
+google-auth>=2.0.0
+google-api-python-client>=2.0.0
+
