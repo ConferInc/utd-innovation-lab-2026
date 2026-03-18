@@ -1,9 +1,90 @@
 from fastapi import Request, Depends, HTTPException
 from sqlalchemy.orm import Session
+import os
+import hmac
+import hashlib
+import base64
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..database.models import get_db
 from .phone_verification import authenticate_phone_user
 from .session_manager import generate_session, validate_session
+
+
+TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
+
+
+def verify_twilio_signature(request_url: str, params: dict, twilio_signature: str) -> bool:
+    """
+    Verifies that the request came from Twilio using X-Twilio-Signature.
+    """
+
+    if not TWILIO_AUTH_TOKEN:
+        raise Exception("TWILIO_AUTH_TOKEN environment variable not set")
+
+    sorted_params = sorted(params.items())
+
+    data = request_url
+    for key, value in sorted_params:
+        data += key + value
+
+    digest = hmac.new(
+        TWILIO_AUTH_TOKEN.encode("utf-8"),
+        data.encode("utf-8"),
+        hashlib.sha1
+    ).digest()
+
+    computed_signature = base64.b64encode(digest).decode("utf-8")
+
+    return hmac.compare_digest(computed_signature, twilio_signature)
+
+
+class TwilioAuthMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware to verify Twilio webhook signatures
+    """
+
+    async def dispatch(self, request: Request, call_next):
+
+        if request.url.path == "/webhook":
+
+            twilio_signature = request.headers.get("X-Twilio-Signature")
+
+            if not twilio_signature:
+                raise HTTPException(status_code=401, detail="Missing Twilio signature")
+
+            form = await request.form()
+            params = dict(form)
+
+            request_url = str(request.url)
+
+            valid = verify_twilio_signature(
+                request_url,
+                params,
+                twilio_signature
+            )
+
+            if not valid:
+                raise HTTPException(status_code=401, detail="Invalid Twilio signature")
+
+        response = await call_next(request)
+        return response
+
+
+def verify_internal_token(request: Request):
+    """
+    Optional helper for protecting internal API endpoints
+    """
+
+    token = request.headers.get("Authorization")
+
+    if not token:
+        raise HTTPException(status_code=401, detail="Missing authorization token")
+
+    expected_token = os.getenv("INTERNAL_API_TOKEN")
+
+    if token != f"Bearer {expected_token}":
+        raise HTTPException(status_code=401, detail="Invalid authorization token")
 
 
 async def verify_whatsapp_request(request: Request, db: Session = Depends(get_db)):
