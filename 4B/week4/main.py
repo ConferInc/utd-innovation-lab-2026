@@ -28,6 +28,8 @@ from .bot.intent_classifier import classify_intent
 from .bot.response_builder import build_response
 from .database.models import SessionLocal, check_db_health, get_db, init_db
 from .database.state_tracking import log_message
+from .service_wrappers import StripeWrapper, MapsWrapper, CalendarWrapper
+from .service_wrappers.base_wrapper import NonRetryableServiceError
 
 
 logging.basicConfig(
@@ -58,14 +60,6 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
-
-# Integration clients for test/demo endpoints (Subodh)
-from .integrations import StripeIntegration, GoogleMapsIntegration, GoogleCalendarIntegration
-
-stripe_client = StripeIntegration()
-maps_client = GoogleMapsIntegration()
-calendar_client = GoogleCalendarIntegration()
-
 
 def send_whatsapp_message(to: str, body: str) -> str:
     """Send a text message to a WhatsApp user via Twilio."""
@@ -107,21 +101,105 @@ def root() -> Dict[str, str]:
 
 @app.post("/create-payment")
 def create_payment() -> Dict[str, Any]:
-    """Create a Stripe payment intent (demo). Returns client_secret for client-side confirm."""
-    intent = stripe_client.create_payment_intent(amount=1000)
-    return {"client_secret": getattr(intent, "client_secret", None)}
+    """
+    Create a Stripe payment intent (demo). Returns client_secret for client-side confirm.
+
+    Uses StripeWrapper with retry and error handling. Returns 400 on bad inputs and
+    503 on upstream Stripe issues.
+    """
+    logger.info("create_payment: initializing StripeWrapper")
+    try:
+        stripe = StripeWrapper()
+    except ValueError as exc:
+        logger.exception("create_payment: Stripe configuration error")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"Stripe configuration error: {str(exc)}"},
+        )
+
+    try:
+        intent = stripe.create_payment_intent(amount=1000)
+        client_secret = intent.get("client_secret")
+        logger.info("create_payment: payment_intent created successfully")
+        return {"client_secret": client_secret}
+    except NonRetryableServiceError as exc:
+        logger.exception("create_payment: non-retryable error")
+        return JSONResponse(
+            status_code=400,
+            content={"detail": str(exc)},
+        )
+    except Exception as exc:
+        logger.exception("create_payment: unexpected Stripe error")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"Stripe service error: {str(exc)}"},
+        )
 
 
 @app.get("/maps")
 def maps_test() -> Any:
-    """Test Google Maps geocode (Dallas)."""
-    return maps_client.geocode("Dallas")
+    """
+    Test Google Maps geocode (Dallas) using MapsWrapper.
+
+    Returns geocode results for a hardcoded address. Returns 503 on upstream issues.
+    """
+    logger.info("maps_test: initializing MapsWrapper")
+    try:
+        maps = MapsWrapper()
+    except ValueError as exc:
+        logger.exception("maps_test: Maps configuration error")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"Google Maps configuration error: {str(exc)}"},
+        )
+
+    try:
+        return maps.geocode("Dallas")
+    except NonRetryableServiceError as exc:
+        logger.exception("maps_test: non-retryable error")
+        return JSONResponse(
+            status_code=400,
+            content={"detail": str(exc)},
+        )
+    except Exception as exc:
+        logger.exception("maps_test: unexpected Google Maps error")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"Google Maps service error: {str(exc)}"},
+        )
 
 
 @app.get("/calendar")
 def calendar_test() -> Any:
-    """Test Google Calendar / KB upcoming events."""
-    return calendar_client.list_events()
+    """
+    Test Google Calendar upcoming events using CalendarWrapper.
+
+    Returns a JSON object with upcoming events. Returns 503 on upstream issues.
+    """
+    logger.info("calendar_test: initializing CalendarWrapper")
+    try:
+        calendar = CalendarWrapper()
+    except ValueError as exc:
+        logger.exception("calendar_test: Calendar configuration error")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"Google Calendar configuration error: {str(exc)}"},
+        )
+
+    try:
+        return calendar.list_events()
+    except NonRetryableServiceError as exc:
+        logger.exception("calendar_test: non-retryable error")
+        return JSONResponse(
+            status_code=400,
+            content={"detail": str(exc)},
+        )
+    except Exception as exc:
+        logger.exception("calendar_test: unexpected Google Calendar error")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": f"Google Calendar service error: {str(exc)}"},
+        )
 
 
 def _process_incoming_message(
