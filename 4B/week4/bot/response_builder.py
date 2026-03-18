@@ -10,6 +10,8 @@ as context, with hardcoded fallbacks when the LLM is unavailable.
 
 import os
 import json
+import re
+import logging
 from typing import Dict, Optional
 
 from .intent_classifier import classify_intent
@@ -43,6 +45,12 @@ except ImportError:
         return f"Directions from {user_location} to {temple_address} (integration unavailable)"
 
 try:
+    from ..service_wrappers.maps_wrapper import MapsWrapper
+except ImportError:
+    MapsWrapper = None
+    print("Warning: MapsWrapper not found (service_wrappers/maps_wrapper.py)")
+
+try:
     from ..integrations.stripe import get_donation_link
 except ImportError:
     print("Warning: stripe integration not found")
@@ -58,9 +66,17 @@ except ImportError:
     def get_events_on_date(date_str):
         return []
 
+try:
+    from ..service_wrappers.calendar_wrapper import CalendarWrapper
+except ImportError:
+    CalendarWrapper = None
+    print("Warning: CalendarWrapper not found (service_wrappers/calendar_wrapper.py)")
+
 
 TEMPLE_ADDRESS = "1450 North Watters Road, Allen, TX 75013"
 TEMPLE_NAME = "JKYog Radha Krishna Temple"
+
+logger = logging.getLogger(__name__)
 
 _BOT_SYSTEM_PROMPT = """You are a helpful WhatsApp assistant for JKYog Radha Krishna Temple located in Allen, Texas.
 
@@ -155,6 +171,116 @@ def _generate_with_llm(user_message: str, context: str) -> str | None:
     if provider == "grok":
         return _generate_with_grok(user_message, context)
     return _generate_with_gemini(user_message, context)
+
+
+def _strip_html(html: str) -> str:
+    # Google Directions step instructions include HTML tags.
+    return re.sub(r"<[^>]+>", "", html or "")
+
+
+def _get_directions_text_from_maps_wrapper(user_location: str) -> str:
+    """
+    Primary directions path:
+      user_location -> MapsWrapper().directions(...) -> format into directions_text.
+    """
+    if not MapsWrapper:
+        return ""
+
+    try:
+        print("calling MapsWrapper.directions (render log)")
+        logger.info("calling MapsWrapper.directions | origin=%s", user_location)
+
+        wrapper = MapsWrapper()
+        directions_result = wrapper.directions(
+            origin=user_location,
+            destination=TEMPLE_ADDRESS,
+            mode="driving",
+        )
+
+        routes = directions_result.get("routes") or []
+        if not routes:
+            return "❌ Could not find directions for that route."
+
+        legs = routes[0].get("legs") or []
+        if not legs:
+            return "❌ Could not find directions for that route."
+
+        leg0 = legs[0]
+        steps = leg0.get("steps") or []
+        total_distance = (leg0.get("distance") or {}).get("text", "") or ""
+        total_duration = (leg0.get("duration") or {}).get("text", "") or ""
+
+        lines = []
+        if total_distance or total_duration:
+            lines.append(f"🗺️ {total_distance} • {total_duration}".strip())
+
+        for idx, step in enumerate(steps, start=1):
+            instruction = _strip_html(step.get("html_instructions", "") or "")
+            distance = (step.get("distance") or {}).get("text", "") or ""
+            if instruction and distance:
+                lines.append(f"{idx}. {instruction} ({distance})")
+            elif instruction:
+                lines.append(f"{idx}. {instruction}")
+
+        return "\n".join(lines).strip() or "❌ Could not find directions for that route."
+    except Exception as exc:
+        logger.exception("MapsWrapper directions failed")
+        print(f"MapsWrapper directions failed: {exc}")
+        return ""
+
+
+def _date_part(iso_or_datetime_str: str) -> str:
+    """
+    Extract 'YYYY-MM-DD' from Google Calendar start values:
+      - 'YYYY-MM-DD' (all-day)
+      - 'YYYY-MM-DDTHH:MM:SS...' (dateTime)
+    """
+    if not iso_or_datetime_str:
+        return ""
+    if len(iso_or_datetime_str) >= 10:
+        return iso_or_datetime_str[:10]
+    return ""
+
+
+def _get_calendar_events_from_wrapper(date_str: Optional[str]) -> list[Dict]:
+    """
+    Primary events path:
+      CalendarWrapper().list_events(max_results=20) -> simplify -> optional date filter.
+    """
+    if not CalendarWrapper:
+        return []
+
+    try:
+        print("calling CalendarWrapper.list_events (render log)")
+        logger.info("calling CalendarWrapper.list_events | date_filter=%s", date_str)
+
+        wrapper = CalendarWrapper()
+        calendar_result = wrapper.list_events(max_results=20)
+        raw_events = calendar_result.get("events") or []
+
+        simplified: list[Dict] = []
+        for item in raw_events:
+            summary = item.get("summary") or "Event"
+            start_obj = item.get("start") or {}
+            start_val = start_obj.get("dateTime") or start_obj.get("date") or ""
+            simplified.append({"summary": summary, "start": start_val})
+
+        # If a date was requested, filter by matching the date part of start.
+        if date_str:
+            simplified = [
+                e for e in simplified
+                if _date_part(e.get("start", "")).strip() == date_str
+            ]
+
+        # WhatsApp-friendly output: only show the most relevant few.
+        if not date_str:
+            simplified = simplified[:5]
+
+        return simplified
+    except Exception as exc:
+        logger.exception("CalendarWrapper list_events failed")
+        print(f"CalendarWrapper list_events failed: {exc}")
+        return []
 
 
 def handle_greeting(user_context: Optional[Dict] = None) -> str:
@@ -253,12 +379,17 @@ def handle_event_query(user_message: str, entities: Dict) -> str:
                 response += "\n"
         return response
 
-    # Try calendar integration
-    calendar_events = (
-        get_events_on_date(entities["date"])
-        if "date" in entities
-        else get_upcoming_events(limit=5)
-    )
+    # Try calendar integration (primary via CalendarWrapper)
+    date_filter = entities.get("date") if isinstance(entities, dict) else None
+    calendar_events = _get_calendar_events_from_wrapper(date_filter)
+
+    # Robust fallback: if wrapper fails/unavailable, use legacy integration.
+    if not calendar_events:
+        calendar_events = (
+            get_events_on_date(entities["date"])
+            if "date" in entities
+            else get_upcoming_events(limit=5)
+        )
     if calendar_events:
         response = "Upcoming Events:\n\n"
         for event in calendar_events[:3]:
@@ -298,10 +429,15 @@ def handle_directions(user_message: str, entities: Dict) -> str:
     directions_text = ""
 
     if user_location:
-        directions_text = get_temple_directions_from_user_location(
-            user_location=user_location,
-            temple_address=TEMPLE_ADDRESS,
-        )
+        # Primary path: service wrapper.
+        directions_text = _get_directions_text_from_maps_wrapper(user_location)
+
+        # Robust fallback: if wrapper fails/unavailable, keep old integration.
+        if not directions_text:
+            directions_text = get_temple_directions_from_user_location(
+                user_location=user_location,
+                temple_address=TEMPLE_ADDRESS,
+            )
 
     context = (
         f"The user is asking for directions to {TEMPLE_NAME}. "
