@@ -124,6 +124,19 @@ The fallback responses are:
 
 ---
 
+### 3.1. Additional Render Log Samples (Message-level)
+The following samples include full timing metrics observed in Render logs after service-wrapper wiring:
+
+| Sample | Intent | ack_ms | queue_delay_ms | send_ms | total_ms |
+|--------|--------|--------|----------------|---------|----------|
+| S1     | greeting | 187 ms | 187 ms | 3550 ms | 6491 ms |
+| S2     | greeting | 46 ms  | 47 ms  | 330 ms  | 2675 ms |
+| S3     | directions_request | 135 ms | 135 ms | 275 ms | 3201 ms |
+
+Notes:
+- `ack_ms` and `queue_delay_ms` stay low (sub-200ms in these samples).
+- `total_ms` varies primarily with downstream work (LLM + Twilio send) rather than webhook acknowledgement.
+
 ### 4. LLM Provider Summary
 
 | Provider | Env var          | Default model        | Status as of Week 5   |
