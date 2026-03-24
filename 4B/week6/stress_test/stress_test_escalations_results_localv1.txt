@@ -1,0 +1,143 @@
+============================================================
+  ESCALATIONS TABLE — STRESS TEST
+============================================================
+  Test user: 09cca20d-4d69-476e-af36-6d414e36df85
+
+  Phase 1: Serial Creates (x20)
+    [001] OK  latency=619.0ms
+    [002] OK  latency=647.6ms
+    [003] OK  latency=791.2ms
+    [004] OK  latency=816.3ms
+    [005] OK  latency=810.4ms
+    [006] OK  latency=797.5ms
+    [007] OK  latency=824.9ms
+    [008] OK  latency=820.1ms
+    [009] OK  latency=821.7ms
+    [010] OK  latency=840.6ms
+    [011] OK  latency=847.1ms
+    [012] OK  latency=838.3ms
+    [013] OK  latency=792.1ms
+    [014] OK  latency=817.8ms
+    [015] OK  latency=815.9ms
+    [016] OK  latency=809.4ms
+    [017] OK  latency=820.2ms
+    [018] OK  latency=795.9ms
+    [019] OK  latency=826.8ms
+    [020] OK  latency=791.2ms
+
+  --- Serial Creates ---
+  Total: 20  |  OK: 20  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) — min: 619.0  mean: 797.2  median: 816.13  p95: 847.13  max: 847.13
+
+  Phase 2: Concurrent Creates (x50, workers=10)
+    [001] OK  latency=808.8ms
+    [002] OK  latency=1325.7ms
+    [003] OK  latency=1327.8ms
+    [004] OK  latency=1324.9ms
+    [005] OK  latency=1330.5ms
+    [006] OK  latency=1329.1ms
+    [007] OK  latency=1327.7ms
+    [008] OK  latency=719.3ms
+    [009] OK  latency=610.3ms
+    [010] OK  latency=611.4ms
+    [011] OK  latency=609.4ms
+    [012] OK  latency=612.0ms
+    [013] OK  latency=613.5ms
+    [014] OK  latency=613.5ms
+    [015] OK  latency=607.4ms
+    [016] OK  latency=607.9ms
+    [017] OK  latency=609.1ms
+    [018] OK  latency=608.8ms
+    [019] OK  latency=608.2ms
+    [020] OK  latency=612.4ms
+    [021] OK  latency=2701.0ms
+    [022] OK  latency=610.4ms
+    [023] OK  latency=606.8ms
+    [024] OK  latency=605.1ms
+    [025] OK  latency=605.9ms
+    [026] OK  latency=607.2ms
+    [027] OK  latency=614.1ms
+    [028] OK  latency=613.7ms
+    [029] OK  latency=606.1ms
+    [030] OK  latency=602.3ms
+    [031] OK  latency=601.6ms
+    [032] OK  latency=603.1ms
+    [033] OK  latency=606.3ms
+    [034] OK  latency=614.9ms
+    [035] OK  latency=615.2ms
+    [036] OK  latency=598.8ms
+    [037] OK  latency=729.3ms
+    [038] OK  latency=724.0ms
+    [039] OK  latency=727.6ms
+    [040] OK  latency=728.1ms
+    [041] OK  latency=773.8ms
+    [042] OK  latency=776.3ms
+    [043] OK  latency=736.5ms
+    [044] OK  latency=604.4ms
+    [045] OK  latency=606.6ms
+    [046] OK  latency=605.7ms
+    [047] OK  latency=606.9ms
+    [048] OK  latency=5618.5ms
+    [049] OK  latency=3529.9ms
+    [050] OK  latency=5850.3ms
+
+  --- Concurrent Creates ---
+  Total: 50  |  OK: 50  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) — min: 598.8  mean: 1024.96  median: 612.95  p95: 3529.89  max: 5850.26
+
+  Phase 3: Status Transitions (x30)
+    [001] in_progress=OK (628.7ms)  resolved=OK (618.6ms)
+    [002] in_progress=OK (1052.0ms)  resolved=OK (872.9ms)
+    [003] in_progress=OK (819.2ms)  resolved=OK (821.7ms)
+    [004] in_progress=OK (818.0ms)  resolved=OK (829.1ms)
+    [005] in_progress=OK (680.0ms)  resolved=OK (621.2ms)
+    [006] in_progress=OK (613.8ms)  resolved=OK (844.0ms)
+    [007] in_progress=OK (811.0ms)  resolved=OK (820.9ms)
+    [008] in_progress=OK (822.2ms)  resolved=OK (824.7ms)
+    [009] in_progress=OK (787.4ms)  resolved=OK (824.3ms)
+    [010] in_progress=OK (836.7ms)  resolved=OK (811.7ms)
+    [011] in_progress=OK (615.7ms)  resolved=OK (619.5ms)
+    [012] in_progress=OK (611.7ms)  resolved=OK (821.5ms)
+    [013] in_progress=OK (816.5ms)  resolved=OK (848.9ms)
+    [014] in_progress=OK (819.8ms)  resolved=OK (815.4ms)
+    [015] in_progress=OK (810.3ms)  resolved=OK (926.8ms)
+    [016] in_progress=OK (816.4ms)  resolved=OK (704.7ms)
+    [017] in_progress=OK (627.5ms)  resolved=OK (728.6ms)
+    [018] in_progress=OK (777.9ms)  resolved=OK (818.4ms)
+    [019] in_progress=OK (842.9ms)  resolved=OK (792.0ms)
+    [020] in_progress=OK (857.3ms)  resolved=OK (792.3ms)
+    [021] in_progress=OK (805.4ms)  resolved=OK (822.2ms)
+    [022] in_progress=OK (816.7ms)  resolved=OK (649.3ms)
+    [023] in_progress=OK (631.6ms)  resolved=OK (616.7ms)
+    [024] in_progress=OK (614.8ms)  resolved=OK (615.4ms)
+    [025] in_progress=OK (614.6ms)  resolved=OK (818.7ms)
+    [026] in_progress=OK (816.0ms)  resolved=OK (829.8ms)
+    [027] in_progress=OK (814.4ms)  resolved=OK (789.4ms)
+    [028] in_progress=OK (824.6ms)  resolved=OK (683.2ms)
+    [029] in_progress=OK (611.3ms)  resolved=OK (617.4ms)
+    [030] in_progress=OK (809.0ms)  resolved=OK (773.5ms)
+
+  --- Status Transitions ---
+  Total: 60  |  OK: 60  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) — min: 611.29  mean: 763.26  median: 811.33  p95: 872.9  max: 1052.05
+
+  Phase 4: Query by User (x10)
+    [001] OK  rows=70  latency=382.0ms
+    [002] OK  rows=70  latency=238.0ms
+    [003] OK  rows=70  latency=237.1ms
+    [004] OK  rows=70  latency=233.4ms
+    [005] OK  rows=70  latency=229.6ms
+    [006] OK  rows=70  latency=234.4ms
+    [007] OK  rows=70  latency=239.6ms
+    [008] OK  rows=70  latency=237.0ms
+    [009] OK  rows=70  latency=230.7ms
+    [010] OK  rows=70  latency=257.7ms
+
+  --- Query by User ---
+  Total: 10  |  OK: 10  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) — min: 229.63  mean: 251.95  median: 237.05  p95: 381.97  max: 381.97
+
+============================================================
+  RESULT: PASS
+  JSON report saved to: stress_test_escalations_results_localv1.json
+============================================================

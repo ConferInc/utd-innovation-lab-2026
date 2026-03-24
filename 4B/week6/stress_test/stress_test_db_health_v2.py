@@ -1,4 +1,4 @@
-"""Stress test for /health/db — Week 6 version.
+"""Stress test for /health/db -- Week 6 version.
 
 Extends the Week 5 test with Phase 7: escalations table health verification.
 Validates that /health/db returns escalation table status after migration 002.
@@ -201,7 +201,7 @@ def print_phase_stats(name: str, results: list[dict[str, object]]) -> dict:
     print(f"\n  --- {name} stats ---")
     print(f"  Requests: {stats['total_requests']}  |  OK: {stats['successes']}  |  FAIL: {stats['failures']}  |  Rate: {stats['success_rate_pct']}%")
     lat = stats["latency_ms"]
-    print(f"  Latency (ms) — min: {lat['min']}  mean: {lat['mean']}  median: {lat['median']}  p95: {lat['p95']}  p99: {lat['p99']}  max: {lat['max']}")
+    print(f"  Latency (ms) -- min: {lat['min']}  mean: {lat['mean']}  median: {lat['median']}  p95: {lat['p95']}  p99: {lat['p99']}  max: {lat['max']}")
     return stats
 
 
@@ -209,7 +209,7 @@ def main() -> int:
     overall_start = time.perf_counter()
 
     print("=" * 60)
-    print("  DB CONNECTION HARDENING — STRESS TEST v2 (Week 6)")
+    print("  DB CONNECTION HARDENING -- STRESS TEST v2 (Week 6)")
     print("=" * 60)
     print(f"  Target:       {STRESS_TEST_URL}")
     print(f"  Timeout:      {REQUEST_TIMEOUT}s")
@@ -222,7 +222,7 @@ def main() -> int:
     print(f"    pool_pre_ping   = True")
     print(f"    pool_use_lifo   = True")
     print()
-    print(f"  Phases: warm-up → burst → sustained → idle → recovery → rapid → escalation probe")
+    print(f"  Phases: warm-up -> burst -> sustained -> idle -> recovery -> rapid -> escalation probe")
 
     all_results: list[dict[str, object]] = []
     phase_stats: dict[str, dict] = {}
@@ -327,9 +327,9 @@ def main() -> int:
     print(f"\n  Full report saved to: {report_path}")
 
     if overall_stats["failures"] == 0:
-        print("\n  RESULT: PASS — all requests succeeded, pool hardening + escalation probe validated.")
+        print("\n  RESULT: PASS -- all requests succeeded, pool hardening + escalation probe validated.")
     else:
-        print(f"\n  RESULT: FAIL — {overall_stats['failures']} request(s) failed. Review phase stats above.")
+        print(f"\n  RESULT: FAIL -- {overall_stats['failures']} request(s) failed. Review phase stats above.")
 
     return 0 if overall_stats["failures"] == 0 else 1
 

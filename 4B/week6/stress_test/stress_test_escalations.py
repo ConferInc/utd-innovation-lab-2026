@@ -13,13 +13,14 @@ from __future__ import annotations
 
 import os
 import sys
+import json
 import statistics
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-week6_dir = Path(__file__).resolve().parent
+week6_dir = Path(__file__).resolve().parent.parent
 if str(week6_dir) not in sys.path:
     sys.path.insert(0, str(week6_dir))
 
@@ -41,6 +42,9 @@ SERIAL_CREATES = int(os.getenv("ESCALATION_SERIAL_CREATES", "20"))
 CONCURRENT_CREATES = int(os.getenv("ESCALATION_CONCURRENT_CREATES", "50"))
 CONCURRENCY = int(os.getenv("ESCALATION_CONCURRENCY", "10"))
 STATUS_TRANSITIONS = int(os.getenv("ESCALATION_STATUS_TRANSITIONS", "30"))
+ESCALATIONS_REPORT_PATH = os.getenv(
+    "ESCALATIONS_REPORT_PATH", "stress_test_escalations_results_localv1.json"
+)
 
 
 def _create_unique_test_user() -> uuid.UUID:
@@ -249,8 +253,34 @@ def main() -> int:
         if s4["failures"] > 0:
             all_ok = False
 
+        overall_results = (
+            serial_results + concurrent_results + transition_results + query_results
+        )
+        overall_stats = compute_stats(overall_results)
+        report = {
+            "test_config": {
+                "serial_creates": SERIAL_CREATES,
+                "concurrent_creates": CONCURRENT_CREATES,
+                "concurrency": CONCURRENCY,
+                "status_transitions_requested": STATUS_TRANSITIONS,
+                "status_transitions_executed": transition_count,
+                "query_requests": 10,
+            },
+            "phases": {
+                "serial_creates": s1,
+                "concurrent_creates": s2,
+                "status_transitions": s3,
+                "query_by_user": s4,
+            },
+            "overall": overall_stats,
+            "result": "PASS" if all_ok else "FAIL",
+        }
+        with open(ESCALATIONS_REPORT_PATH, "w", encoding="utf-8") as f:
+            json.dump(report, f, indent=2)
+
         print(f"\n{'='*60}")
         print(f"  RESULT: {'PASS' if all_ok else 'FAIL'}")
+        print(f"  JSON report saved to: {ESCALATIONS_REPORT_PATH}")
         print(f"{'='*60}")
 
         return 0 if all_ok else 1
