@@ -161,12 +161,12 @@ def check_db_health() -> dict[str, Any]:
 
 def init_db() -> None:
     """Run Alembic migrations to bring the database schema up to date."""
-    week4_dir = Path(__file__).resolve().parent.parent
-    alembic_ini = week4_dir / "alembic.ini"
+    week6_dir = Path(__file__).resolve().parent.parent
+    alembic_ini = week6_dir / "alembic.ini"
     if not alembic_ini.is_file():
         raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
 
     cfg = Config(str(alembic_ini))
-    cfg.set_main_option("script_location", str(week4_dir / "migrations"))
+    cfg.set_main_option("script_location", str(week6_dir / "migrations"))
 
     _run_with_retry(lambda: command.upgrade(cfg, "head"))

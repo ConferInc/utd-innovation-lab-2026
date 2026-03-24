@@ -19,9 +19,9 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
-week4_dir = Path(__file__).resolve().parent
-if str(week4_dir) not in sys.path:
-    sys.path.insert(0, str(week4_dir))
+week6_dir = Path(__file__).resolve().parent
+if str(week6_dir) not in sys.path:
+    sys.path.insert(0, str(week6_dir))
 
 from dotenv import load_dotenv
 
