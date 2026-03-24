@@ -122,17 +122,41 @@ def _execute_health_query() -> None:
         connection.execute(text("SELECT 1"))
 
 
+def _execute_escalations_probe() -> None:
+    """Verify the escalations table is queryable."""
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1 FROM escalations LIMIT 1"))
+
+
 def check_db_health() -> dict[str, Any]:
-    """Check whether the application can connect to the database."""
+    """Check whether the application can connect to the database
+    and whether the escalations table is reachable."""
     try:
         _run_with_retry(_execute_health_query)
-        return {"status": "ok", "database": "connected"}
     except Exception as exc:
         return {
             "status": "error",
             "database": "disconnected",
             "detail": str(exc),
         }
+
+    escalations_ok = True
+    try:
+        _run_with_retry(_execute_escalations_probe, retries=2, base_delay_seconds=0.5)
+    except Exception:
+        escalations_ok = False
+
+    if escalations_ok:
+        return {
+            "status": "ok",
+            "database": "connected",
+            "tables": {"escalations": "ok"},
+        }
+    return {
+        "status": "degraded",
+        "database": "connected",
+        "tables": {"escalations": "unreachable"},
+    }
 
 
 def init_db() -> None:

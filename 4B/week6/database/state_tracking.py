@@ -1,14 +1,17 @@
-#database/state_tracking.py
+# database/state_tracking.py
 
 import copy
 import hashlib
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.orm import Session
 
-from .schema import Conversation, Message, SessionState, User
+from .schema import Conversation, Escalation, Message, SessionState, User
+
+
+VALID_ESCALATION_STATUSES = {"pending", "in_progress", "resolved"}
 
 
 def _now() -> datetime:
@@ -185,3 +188,138 @@ def merge_session_state(
     db.commit()
     db.refresh(session_obj)
     return session_obj
+
+
+def create_escalation(
+    db: Session,
+    user_id: uuid.UUID,
+    reason: str,
+    context: Optional[Dict[str, Any]] = None,
+    session_id: Optional[uuid.UUID] = None,
+) -> Escalation:
+    """Create a new escalation for a user.
+
+    If session_id is provided, validates that it belongs to the same user
+    to prevent cross-user data corruption.
+    """
+    if not isinstance(reason, str):
+        raise ValueError("reason must be a non-empty string")
+
+    cleaned_reason = reason.strip()
+    if not cleaned_reason:
+        raise ValueError("reason must be a non-empty string")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise ValueError(f"User {user_id} does not exist")
+
+    if session_id is not None:
+        session_obj = (
+            db.query(SessionState)
+            .filter(
+                SessionState.id == session_id,
+                SessionState.user_id == user_id,
+            )
+            .first()
+        )
+        if not session_obj:
+            raise ValueError(
+                f"session_id {session_id} does not exist "
+                f"or does not belong to user {user_id}"
+            )
+
+    now_utc = _now()
+    escalation = Escalation(
+        user_id=user_id,
+        session_id=session_id,
+        reason=cleaned_reason,
+        context=context or {},
+        status="pending",
+        created_at=now_utc,
+    )
+    db.add(escalation)
+    db.commit()
+    db.refresh(escalation)
+    return escalation
+
+
+def update_escalation_status(
+    db: Session,
+    escalation_id: uuid.UUID,
+    new_status: str,
+    resolved_by: Optional[str] = None,
+    note: Optional[str] = None,
+) -> Optional[Escalation]:
+    """Transition an escalation to a new status.
+
+    Sets resolved_at and resolved_by only when status becomes 'resolved'.
+    Clears them again if status is moved back to a non-resolved state.
+    """
+    if new_status not in VALID_ESCALATION_STATUSES:
+        raise ValueError(
+            f"Invalid status '{new_status}'. "
+            f"Must be one of: {', '.join(sorted(VALID_ESCALATION_STATUSES))}"
+        )
+
+    escalation = db.query(Escalation).filter(Escalation.id == escalation_id).first()
+    if not escalation:
+        return None
+
+    escalation.status = new_status
+
+    if new_status == "resolved":
+        cleaned_resolved_by = None
+        if isinstance(resolved_by, str):
+            stripped_value = resolved_by.strip()
+            cleaned_resolved_by = stripped_value or None
+        escalation.resolved_at = _now()
+        escalation.resolved_by = cleaned_resolved_by
+    else:
+        escalation.resolved_at = None
+        escalation.resolved_by = None
+
+    if isinstance(note, str):
+        cleaned_note = note.strip()
+        if cleaned_note:
+            ctx = escalation.context or {}
+            notes = ctx.get("status_notes", [])
+            notes.append(
+                {
+                    "status": new_status,
+                    "note": cleaned_note,
+                    "timestamp": _now().isoformat(),
+                }
+            )
+            ctx["status_notes"] = notes
+            escalation.context = ctx
+
+    db.commit()
+    db.refresh(escalation)
+    return escalation
+
+
+def get_escalations_by_user(
+    db: Session,
+    user_id: uuid.UUID,
+    status: Optional[str] = None,
+) -> List[Escalation]:
+    """Return all escalations for a user, optionally filtered by status."""
+    query = db.query(Escalation).filter(Escalation.user_id == user_id)
+
+    if status:
+        if status not in VALID_ESCALATION_STATUSES:
+            raise ValueError(
+                f"Invalid status filter '{status}'. "
+                f"Must be one of: {', '.join(sorted(VALID_ESCALATION_STATUSES))}"
+            )
+        query = query.filter(Escalation.status == status)
+
+    return query.order_by(Escalation.created_at.desc()).all()
+
+
+def get_escalation_by_id(
+    db: Session,
+    escalation_id: uuid.UUID,
+) -> Optional[Escalation]:
+    """Fetch a single escalation by its primary key."""
+    return db.query(Escalation).filter(Escalation.id == escalation_id).first()

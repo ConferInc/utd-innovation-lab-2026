@@ -1,5 +1,5 @@
 """
-Unified FastAPI entrypoint for Week 5.
+Unified FastAPI entrypoint for Week 6.
 
 Implements the orchestration pipeline for the JKYog WhatsApp bot:
 - Initializes the database
@@ -36,7 +36,7 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-logger = logging.getLogger("week5.main")
+logger = logging.getLogger("week4.main")
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -85,11 +85,15 @@ def health_check() -> Dict[str, str]:
 def health_check_db():
     """
     Database health check endpoint.
-    Returns 200 if the database is reachable, 503 otherwise.
+    Returns 200 if the database is fully healthy or degraded (base
+    connectivity works but an auxiliary table is unreachable).
+    Returns 503 only when base database connectivity fails entirely.
     """
     result = check_db_health()
     if result["status"] == "ok":
         return result
+    if result["status"] == "degraded":
+        return JSONResponse(status_code=200, content=result)
     return JSONResponse(status_code=503, content=result)
 
 

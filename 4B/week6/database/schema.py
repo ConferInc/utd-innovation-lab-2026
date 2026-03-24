@@ -1,9 +1,9 @@
-#database/schema.py
+# database/schema.py
 
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import relationship
 
@@ -34,6 +34,11 @@ class User(Base):
     )
     sessions = relationship(
         "SessionState",
+        back_populates="user",
+        cascade="all, delete-orphan",
+    )
+    escalations = relationship(
+        "Escalation",
         back_populates="user",
         cascade="all, delete-orphan",
     )
@@ -98,7 +103,6 @@ class SessionState(Base):
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
     )
-    # Stores a SHA-256 hash of the session token, not the raw token itself.
     session_token = Column(String(64), unique=True, index=True, nullable=False)
     expires_at = Column(DateTime, nullable=True)
     is_active = Column(Boolean, default=True, index=True, nullable=False)
@@ -106,3 +110,42 @@ class SessionState(Base):
     updated_at = Column(DateTime, default=_now, onupdate=_now, nullable=False)
 
     user = relationship("User", back_populates="sessions")
+    escalations = relationship(
+        "Escalation",
+        back_populates="session",
+    )
+
+
+class Escalation(Base):
+    """Records a human-handoff / escalation request from the bot."""
+
+    __tablename__ = "escalations"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'in_progress', 'resolved')",
+            name="valid_escalation_status",
+        ),
+    )
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("session_state.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    reason = Column(Text, nullable=False)
+    context = Column(JSONB, default=dict, nullable=False)
+    status = Column(String, nullable=False, default="pending", index=True)
+    created_at = Column(DateTime, default=_now, nullable=False)
+    resolved_at = Column(DateTime, nullable=True)
+    resolved_by = Column(String, nullable=True)
+
+    user = relationship("User", back_populates="escalations")
+    session = relationship("SessionState", back_populates="escalations")
