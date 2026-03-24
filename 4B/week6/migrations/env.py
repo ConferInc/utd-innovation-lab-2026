@@ -14,24 +14,24 @@ from sqlalchemy import pool
 
 config = context.config
 
-# Add the week5 directory to sys.path so "database" package resolves when
-# running Alembic from 4B/week5 (e.g. `alembic upgrade head`).
+# Add the week6 directory to sys.path so "database" package resolves when
+# running Alembic from 4B/week6 (e.g. `alembic upgrade head`).
 config_file = Path(config.config_file_name).resolve()
 script_location = (config_file.parent / config.get_main_option("script_location", "migrations")).resolve()
-week5_dir = script_location.parent
-if str(week5_dir) not in sys.path:
-    sys.path.insert(0, str(week5_dir))
+week6_dir = script_location.parent
+if str(week6_dir) not in sys.path:
+    sys.path.insert(0, str(week6_dir))
 
 # Prefer the already-loaded module from the running FastAPI app so we don't
 # create a second SQLAlchemy engine (and leak a second connection pool).
 _models = (
-    sys.modules.get("4B.week5.database.models")
+    sys.modules.get("4B.week6.database.models")
     or sys.modules.get("database.models")
 )
 if _models:
     Base = _models.Base
     # Ensure schema models are registered with this Base.
-    if "4B.week5.database.schema" not in sys.modules and "database.schema" not in sys.modules:
+    if "4B.week6.database.schema" not in sys.modules and "database.schema" not in sys.modules:
         import database.schema  # noqa: F401
 else:
     from database.models import Base

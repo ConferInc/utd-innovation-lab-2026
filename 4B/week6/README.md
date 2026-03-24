@@ -31,7 +31,7 @@ End-to-end is **under 10 minutes** including first deploy.
 ## Project structure
 
 ```
-4B/week5/
+4B/week6/
 ├── __init__.py
 ├── main.py
 ├── requirements.txt
@@ -115,7 +115,7 @@ Set these in the **Render dashboard** (Environment tab) for your Web Service. Re
 | `STRIPE_DEFAULT_LINK`, `STRIPE_DALLAS_LINK`, etc. | No | Stripe donation links. |
 | `GOOGLE_CALENDAR_SERVICE_ACCOUNT_JSON`, `GOOGLE_CALENDAR_ID` | No | For calendar events. |
 
-Reference: `4B/week5/.env.example` lists all variables. In Render you only need to add the required ones (and any optional) in the Environment tab.
+Reference: `4B/week6/.env.example` lists all variables. In Render you only need to add the required ones (and any optional) in the Environment tab.
 
 ---
 
@@ -124,8 +124,8 @@ Reference: `4B/week5/.env.example` lists all variables. In Render you only need 
 1. **Push the repository to GitHub** (or use an existing fork).
 2. In [Render](https://render.com), create a new **Web Service** and connect the GitHub repo.
 3. **Root Directory:** leave blank (repo root).
-4. **Build command:** `pip install --upgrade pip && pip install -r 4B/week5/requirements.txt`
-5. **Start command:** `uvicorn 4B.week5.main:app --host 0.0.0.0 --port $PORT`
+4. **Build command:** `pip install --upgrade pip && pip install -r 4B/week6/requirements.txt`
+5. **Start command:** `uvicorn 4B.week6.main:app --host 0.0.0.0 --port $PORT`
 6. **Database:** Create a **PostgreSQL** instance on Render (or use Supabase). In your Web Service → **Environment**, add `DATABASE_URL` (Render Postgres: use the **Internal Database URL**).
 7. **Environment:** Add the rest of the required variables: `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, `GOOGLE_API_KEY`. Add any optional vars if you use them.
 8. **Deploy.** Wait for the build to finish.
@@ -165,7 +165,7 @@ If the repo’s `render.yaml` is used, Render may pre-fill build/start; you stil
 ## Troubleshooting
 
 - **App won’t start:** Check that `DATABASE_URL` is set and is a valid PostgreSQL URL (`postgresql://` or `postgres://`).
-- **404 from Gemini / bot replies fail:** Ensure `GOOGLE_API_KEY` is set and valid; see [4B/week5/docs/week4-gemini-fix.md](4B/week5/docs/week4-gemini-fix.md) for model-name issues.
+- **404 from Gemini / bot replies fail:** Ensure `GOOGLE_API_KEY` is set and valid; see [4B/week6/docs/week4-gemini-fix.md](4B/week6/docs/week4-gemini-fix.md) for model-name issues.
 - **WhatsApp not replying:** Verify Twilio env vars and that the Twilio WhatsApp sandbox webhook URL points to `https://<your-service>.onrender.com/webhook/whatsapp`.
 
 ---
