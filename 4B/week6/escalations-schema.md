@@ -48,7 +48,7 @@ Records bot-to-human handoff / escalation requests.
 File: `migrations/versions/002_add_escalations_table.py`
 Revision: `002` (depends on `001`)
 
-alembic upgrade head is requried
+alembic upgrade head is required
 
 Creates the `escalations` table with all columns, constraints, and indexes listed above. The `downgrade()` function drops indexes first, then the table.
 
