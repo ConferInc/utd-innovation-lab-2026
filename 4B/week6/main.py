@@ -26,6 +26,7 @@ from .authentication.auth import verify_whatsapp_request
 from .authentication.session_manager import update_session_context
 from .bot.intent_classifier import classify_intent
 from .bot.response_builder import build_response
+from .api.escalations import router as escalations_router
 from .database.models import SessionLocal, check_db_health, get_db, init_db
 from .database.state_tracking import log_message
 from .service_wrappers import StripeWrapper, MapsWrapper, CalendarWrapper
@@ -36,7 +37,7 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-logger = logging.getLogger("week4.main")
+logger = logging.getLogger("week6.main")
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -60,6 +61,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+app.include_router(escalations_router, prefix="/escalations")
+
 
 def send_whatsapp_message(to: str, body: str) -> str:
     """Send a text message to a WhatsApp user via Twilio."""
@@ -386,4 +390,4 @@ async def whatsapp_webhook(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("4B.week4.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("4B.week6.main:app", host="0.0.0.0", port=8000, reload=True)
