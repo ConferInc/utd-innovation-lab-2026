@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(gh pr:*)",
+      "Bash(gh api:*)",
+      "Bash(find \"/c/Confer Part Time/GIT PROJECTS/UTD Confer\" -name \"*report*\" -o -name \"*Review*\" -o -name \"*review*\" 2>/dev/null | grep -v \".git\" | grep -v \"node_modules\" | head -20)",
+      "Bash(cd:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:d[k] for k in [''''required_pull_request_reviews'''',''''required_status_checks'''',''''enforce_admins''''] if k in d}, indent=2\\)\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d.get\\(''''permission'''',''''unknown''''\\), d.get\\(''''role_name'''',''''unknown''''\\)\\)\")",
+      "Bash(python3 -c \"import yaml; yaml.safe_load\\(open\\(''.github/workflows/claude-code-review.yml''\\)\\); print\\(''YAML is valid''\\)\")",
+      "Bash(python -c \"import yaml; yaml.safe_load\\(open\\(''.github/workflows/claude-code-review.yml''\\)\\); print\\(''YAML is valid''\\)\")"
+    ]
+  }
+}
