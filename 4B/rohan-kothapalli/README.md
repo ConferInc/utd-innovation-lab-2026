@@ -27,10 +27,20 @@
 
 ## Quick Links
 
-- [Week 4 — Gemini 404 fix](week4-gemini-fix.md)
+### Logs (by week)
+
+- [Week 3 — Transcripts & bot plan](logs/week-3/)
+- [Week 4 — Gemini 404 fix](logs/week-4/week4-gemini-fix.md)
+- [Week 5 — Performance notes](logs/week-5/week5-performance-notes.md)
+- [Week 5 — Grok setup](logs/week-5/week5-grok-setup.md)
+- [Week 6 — Contributions log](logs/week-6/week-6-contributions.md)
+
+### Repo
+
 - [Group 4B Workspace](../README.md)
 - [Weekly Summary Template](../../WEEKLY_TEMPLATE.md)
 - [Standards & Conventions](../../STANDARDS.md)
+- [4B file organization guide](../week6/file-organization-guide.md)
 
 ---
 

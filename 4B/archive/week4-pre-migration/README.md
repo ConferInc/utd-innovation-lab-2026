@@ -166,7 +166,7 @@ If the repo’s `render.yaml` is used, Render may pre-fill build/start; you stil
 ## Troubleshooting
 
 - **App won’t start:** Check that `DATABASE_URL` is set and is a valid PostgreSQL URL (`postgresql://` or `postgres://`).
-- **404 from Gemini / bot replies fail:** Ensure `GOOGLE_API_KEY` is set and valid; see [4B/rohan-kothapalli/week4-gemini-fix.md](4B/rohan-kothapalli/week4-gemini-fix.md) for model-name issues.
+- **404 from Gemini / bot replies fail:** Ensure `GOOGLE_API_KEY` is set and valid; see [4B/rohan-kothapalli/logs/week-4/week4-gemini-fix.md](../../rohan-kothapalli/logs/week-4/week4-gemini-fix.md) for model-name issues.
 - **WhatsApp not replying:** Verify Twilio env vars and that the Twilio WhatsApp sandbox webhook URL points to `https://<your-service>.onrender.com/webhook/whatsapp`.
 
 ---

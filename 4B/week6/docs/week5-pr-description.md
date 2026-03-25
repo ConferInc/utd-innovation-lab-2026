@@ -31,8 +31,8 @@ This PR completes Team 4B’s Week 5 integration sprint work by hardening securi
 - `4B/week4/service_wrappers/*`  
 - `4B/week4/requirements.txt`  
 - `4B/week4/stress_test_db_health.py`  
-- `4B/rohan-kothapalli/week5-performance-notes.md`  
-- `4B/rohan-kothapalli/week5-grok-setup.md`  
+- `4B/rohan-kothapalli/logs/week-5/week5-performance-notes.md`
+- `4B/rohan-kothapalli/logs/week-5/week5-grok-setup.md`
 
 ## How to test  
 - **Webhook happy path**: Send a WhatsApp message → confirm immediate 200 response (fast ack) and eventual WhatsApp reply.  
