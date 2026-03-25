@@ -2,33 +2,33 @@
 
 ## 1. Purpose
 
-This document explains how Group 4B will test the JKYog WhatsApp bot end to end against Group 4A’s API Contract v2.0. It covers environment setup, endpoint validation, webhook flow testing, service integration testing, offline mock testing, and expected-versus-actual response comparison. :contentReference[oaicite:0]{index=0} :contentReference[oaicite:1]{index=1}
+This document explains how Group 4B will test the JKYog WhatsApp bot end to end against Group 4A’s API Contract v2.0. It covers environment setup, endpoint validation, webhook flow testing, service integration testing, offline mock testing, and expected-versus-actual response comparison.
 
 ## 2. Scope
 
 This guide covers the following integration areas:
 
 - Twilio WhatsApp webhook processing
-- authentication and session handling
-- bot response generation
-- outbound Twilio message delivery
+- Authentication and session handling
+- Bot response generation
+- Outbound Twilio message delivery
 - Stripe donation flow
 - Google Maps directions flow
-- Google Calendar / event retrieval flow
-- mock testing when real services are unavailable
+- Google Calendar and event retrieval flow
+- Mock testing when real services are unavailable
 
-This guide is for Week 5 integration readiness and cross-team validation. :contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
+This guide is for Week 5 integration readiness and cross-team validation. 
 
 ## 3. Files Used for Testing
 
 The following files were used to prepare this guide:
 
-- `main.py` — unified FastAPI entrypoint and webhook orchestration
-- `auth.py` — request validation / authentication handling
+- `main.py` - unified FastAPI entrypoint and webhook orchestration
+- `auth.py` — request validation and authentication handling
 - `stripe.py` — donation link routing
 - `google_maps.py` — directions generation
 - `calendar.py` — event lookup with API and knowledge-base fallback
-- `week_5_api_contract_v_2_twilio_complete.md` — shared Team 4A / Team 4B contract v2.0 :contentReference[oaicite:4]{index=4} :contentReference[oaicite:5]{index=5} :contentReference[oaicite:6]{index=6} :contentReference[oaicite:7]{index=7} :contentReference[oaicite:8]{index=8}
+- `week_5_api_contract_v_2_twilio_complete.md` — shared Team 4A and Team 4B API Contract v2.0
 
 ## 4. Environment Setup
 
@@ -55,11 +55,17 @@ git checkout -b feature/week5-integration-docs
 git push -u origin feature/week5-integration-docs
 ```
 ### 4.3 Virtual Environment Setup
+
+```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+```
+
 ### 4.4 Start the App
+```bash
 uvicorn main:app --reload
+```
 
 ## 5. Required Environment Variables
 The current implementation depends on the following environment variables:
@@ -78,7 +84,10 @@ The current implementation depends on the following environment variables:
 
 These values are referenced by the main application and integration modules.
 
-### 5.1 Example env. Template
+
+### 5.1 Example `.env` Template
+
+```env
 TWILIO_ACCOUNT_SID=your_twilio_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
 TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
@@ -93,6 +102,7 @@ STRIPE_IRVING_LINK=https://buy.stripe.com/test_irving
 STRIPE_HOUSTON_LINK=https://buy.stripe.com/test_houston
 
 LOG_LEVEL=INFO
+```
 
 ## 6. Available Test Endpoints
 
@@ -100,13 +110,13 @@ The main application currently exposes these endpoints:
 
 ### 6.1 GET /health
 Returns:
-```
+```json
 {"status": "ok"}
 ```
 
 ### 6.2 GET /
 Returns:
-```
+```json
 {"message": "JKYog WhatsApp Bot is running"}
 ```
 
@@ -117,7 +127,7 @@ Creates a Stripe payment intent through the Stripe integration client and return
 Runs a Google Maps geocode test using "Dallas".
 
 ### 6.5 GET /calendar
-Runs a Google Calendar / knowledge-base event test using the calendar integration client.
+Runs a Google Calendar or knowledge-base event test using the calendar integration client.
 
 ### 6.6 POST /webhook/whatsapp
 Main WhatsApp webhook endpoint for inbound user messages. This is the primary endpoint for end-to-end integration testing.
@@ -131,9 +141,11 @@ The webhook flow in main.py is:
 1. Request hits POST /webhook/whatsapp  
 2. verify_whatsapp_request() validates and parses the incoming request  
 3. If the event is not a user message, the app returns: 
-``` 
-    status: ignored  
-    message: Non-message event ignored  
+```json
+{
+  "status": "ignored",
+  "message": "Non-message event ignored"
+}
 ```
 
 4. The application extracts:
@@ -213,11 +225,11 @@ Note: reply_text must match the Twilio outbound message.
 ## 9. Authentication and Security Testing
 
 ### 9.1 What to Validate
-- webhook request parsing works  
-- non-message events are ignored  
-- session handling works  
-- invalid payloads are rejected  
-- errors are logged properly  
+- Webhook request parsing works
+- Non-message events are ignored
+- Session handling works
+- Invalid payloads are rejected
+- Errors are logged properly 
 
 ### 9.2 Auth Test Cases
 
