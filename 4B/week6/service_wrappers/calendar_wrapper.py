@@ -1,3 +1,4 @@
+import os
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
@@ -27,8 +28,8 @@ class CalendarWrapper:
         credentials_file: Optional[str] = None,
         calendar_id: str = "primary",
     ) -> None:
-        self.credentials_file = credentials_file
-        self.calendar_id = calendar_id
+        self.credentials_file = credentials_file or os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+        self.calendar_id = calendar_id or os.getenv("GOOGLE_CALENDAR_ID", "primary")
         self.circuit_breaker = CircuitBreaker(failure_threshold=3, reset_timeout=30)
 
         if not self.credentials_file:
@@ -48,7 +49,8 @@ class CalendarWrapper:
             "circuit_open": self.circuit_breaker.is_open(),
         }
 
-    def list_events(self, limit: int = 10) -> Dict[str, Any]:
+    def list_events(self, limit: int = 10, max_results: int | None = None) -> Dict[str, Any]:
+        effective_limit = max_results if max_results is not None else limit
         now = datetime.now(tz=timezone.utc).isoformat()
 
         def _call() -> Dict[str, Any]:
@@ -57,7 +59,7 @@ class CalendarWrapper:
                 .list(
                     calendarId=self.calendar_id,
                     timeMin=now,
-                    maxResults=limit,
+                    maxResults=effective_limit,
                     singleEvents=True,
                     orderBy="startTime",
                 )
