@@ -69,6 +69,14 @@ By semester end, you will have researched, prototyped, and documented a unified 
 
 ---
 
+## Current Structure (Team 4B)
+
+- **Production bot:** [4B/week5/](./4B/week5/) — JKYog WhatsApp bot (Twilio, auth, integrations)
+- **File organization:** [4B/week6/file-organization-guide.md](./4B/week6/file-organization-guide.md)
+- **Week folders:** week1 (marketing), week3 (baseline), week4 (archived), week5 (production), week6 (docs)
+
+---
+
 ## Week 1 Kickoff
 
 See individual team READMEs for detailed Week 1 assignments.

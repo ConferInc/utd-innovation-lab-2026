@@ -1,0 +1,150 @@
+{
+  "test_config": {
+    "url": "http://127.0.0.1:8000/health/db",
+    "warmup": 5,
+    "burst": 50,
+    "concurrency": 10,
+    "sustained_rounds": 3,
+    "idle_seconds": 30.0,
+    "post_idle": 5,
+    "rapid_burst": 20,
+    "escalation_probe": 10
+  },
+  "expected_pool_settings": {
+    "pool_size": "5",
+    "max_overflow": "2",
+    "pool_timeout": "30",
+    "pool_recycle": "300",
+    "pool_pre_ping": true,
+    "pool_use_lifo": true
+  },
+  "phases": {
+    "warmup": {
+      "total_requests": 5,
+      "successes": 5,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 5
+      },
+      "latency_ms": {
+        "min": 618.74,
+        "max": 2338.85,
+        "mean": 1091.65,
+        "median": 761.36,
+        "p95": 2338.85,
+        "p99": 2338.85,
+        "stddev": 713.11
+      }
+    },
+    "burst": {
+      "total_requests": 50,
+      "successes": 50,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 50
+      },
+      "latency_ms": {
+        "min": 596.87,
+        "max": 1781.96,
+        "mean": 990.93,
+        "median": 1017.04,
+        "p95": 1394.39,
+        "p99": 1781.96,
+        "stddev": 306.08
+      }
+    },
+    "sustained": {
+      "total_requests": 75,
+      "successes": 75,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 75
+      },
+      "latency_ms": {
+        "min": 597.41,
+        "max": 1319.99,
+        "mean": 886.34,
+        "median": 795.38,
+        "p95": 1269.43,
+        "p99": 1319.99,
+        "stddev": 245.27
+      }
+    },
+    "post_idle": {
+      "total_requests": 5,
+      "successes": 5,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 5
+      },
+      "latency_ms": {
+        "min": 598.53,
+        "max": 662.56,
+        "mean": 626.98,
+        "median": 622.06,
+        "p95": 662.56,
+        "p99": 662.56,
+        "stddev": 23.18
+      }
+    },
+    "rapid_reconnect": {
+      "total_requests": 20,
+      "successes": 20,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 20
+      },
+      "latency_ms": {
+        "min": 615.61,
+        "max": 1263.83,
+        "mean": 888.99,
+        "median": 739.76,
+        "p95": 1263.83,
+        "p99": 1263.83,
+        "stddev": 266.1
+      }
+    },
+    "escalation_probe": {
+      "total_requests": 10,
+      "successes": 10,
+      "failures": 0,
+      "success_rate_pct": 100.0,
+      "status_counts": {
+        "200": 10
+      },
+      "latency_ms": {
+        "min": 610.29,
+        "max": 679.38,
+        "mean": 629.31,
+        "median": 618.6,
+        "p95": 679.38,
+        "p99": 679.38,
+        "stddev": 23.58
+      }
+    }
+  },
+  "overall": {
+    "total_requests": 165,
+    "successes": 165,
+    "failures": 0,
+    "success_rate_pct": 100.0,
+    "status_counts": {
+      "200": 165
+    },
+    "latency_ms": {
+      "min": 596.87,
+      "max": 2338.85,
+      "mean": 901.14,
+      "median": 779.68,
+      "p95": 1310.18,
+      "p99": 1781.96,
+      "stddev": 293.71
+    }
+  },
+  "total_elapsed_ms": 64268.03
+}

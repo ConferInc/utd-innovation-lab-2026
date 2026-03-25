@@ -1,0 +1,49 @@
+{
+  "source": "JKYog Radha Krishna Temple Dallas",
+  "updated_at": "2026-03-04",
+  "events": [
+    {
+      "id": "event_weekly_satsang",
+      "title": "Weekly Sunday Satsang",
+      "description": "Weekly spiritual gathering including kirtan, discourse, and meditation.",
+      "day": "Sunday",
+      "start_time": "10:30 AM",
+      "end_time": "12:30 PM",
+      "location": "JKYog Radha Krishna Temple",
+      "address": "1450 North Watters Road, Allen, TX 75013",
+      "tags": ["satsang", "weekly", "spiritual"]
+    },
+{
+        "id": "event_special_satsang",
+        "title": "Friday Special Satsang",
+        "description": "Special spiritual gathering with guest speakers and extended kirtan sessions.",
+        "day": "Friday",
+        "start_time": "7:00 PM",
+        "end_time": "8:00 PM",
+        "location": "JKYog Radha Krishna Temple",
+        "address": "1450 North Watters Road, Allen, TX 75013",
+        "tags": ["satsang", "special", "spiritual"]
+        },
+        {
+            "id": "event_daily_Bhajans",
+            "title": "Daily Bhajans",
+            "description": "Daily devotional singing sessions for spiritual upliftment.",
+            "day": "Daily",
+            "start_time": "7:00 PM",
+            "end_time": "8:00 PM",
+            "location": "JKYog Radha Krishna Temple",
+            "address": "1450 North Watters Road, Allen, TX 75013",
+            "tags": ["bhajans", "daily", "devotional"]
+        },
+        {
+            "id": "event_spiritual_retreat",
+            "title": "Dallas Holi Mela 2026",
+            "description": "Annual Holi Mela celebration with cultural performances, food stalls, and family-friendly activities.",
+            "start_day": "March 1, 2026",
+            "end_day": "March 7, 2026",
+            "location": "JKYog Radha Krishna Temple",
+            "address": "1450 North Watters Road, Allen, TX 75013",
+            "tags": ["holi", "mela", "festival", "cultural"]
+        }
+    ]
+}
