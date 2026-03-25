@@ -72,6 +72,11 @@ except ImportError:
     CalendarWrapper = None
     print("Warning: CalendarWrapper not found (service_wrappers/calendar_wrapper.py)")
 
+try:
+    from ..service_wrappers.base_wrapper import CircuitBreakerOpenError
+except ImportError:
+    CircuitBreakerOpenError = None
+
 
 TEMPLE_ADDRESS = "1450 North Watters Road, Allen, TX 75013"
 TEMPLE_NAME = "JKYog Radha Krishna Temple"
@@ -320,9 +325,11 @@ def _get_directions_text_from_maps_wrapper(user_location: str) -> str:
                 lines.append(f"{idx}. {instruction}")
 
         return "\n".join(lines).strip() or "❌ Could not find directions for that route."
+    except CircuitBreakerOpenError:
+        logger.warning("MapsWrapper directions circuit breaker open")
+        return ""
     except Exception as exc:
         logger.exception("MapsWrapper directions failed")
-        print(f"MapsWrapper directions failed: {exc}")
         return ""
 
 
@@ -374,9 +381,11 @@ def _get_calendar_events_from_wrapper(date_str: Optional[str]) -> list[Dict]:
             simplified = simplified[:5]
 
         return simplified
+    except CircuitBreakerOpenError:
+        logger.warning("CalendarWrapper list_events circuit breaker open")
+        return []
     except Exception as exc:
         logger.exception("CalendarWrapper list_events failed")
-        print(f"CalendarWrapper list_events failed: {exc}")
         return []
 
 

@@ -30,7 +30,7 @@ from .api.escalations import router as escalations_router
 from .database.models import SessionLocal, check_db_health, get_db, init_db
 from .database.state_tracking import log_message
 from .service_wrappers import StripeWrapper, MapsWrapper, CalendarWrapper
-from .service_wrappers.base_wrapper import NonRetryableServiceError
+from .service_wrappers.base_wrapper import CircuitBreakerOpenError, NonRetryableServiceError
 
 
 logging.basicConfig(
@@ -101,6 +101,25 @@ def health_check_db():
     return JSONResponse(status_code=503, content=result)
 
 
+@app.get("/health/services")
+def health_check_services() -> Dict[str, Any]:
+    """Reports configuration and circuit breaker status for all service wrappers."""
+    results = {}
+    try:
+        results["stripe"] = StripeWrapper().health_check()
+    except ValueError:
+        results["stripe"] = {"service": "stripe", "configured": False}
+    try:
+        results["google_maps"] = MapsWrapper().health_check()
+    except ValueError:
+        results["google_maps"] = {"service": "google_maps", "configured": False}
+    try:
+        results["google_calendar"] = CalendarWrapper().health_check()
+    except ValueError:
+        results["google_calendar"] = {"service": "google_calendar", "configured": False}
+    return results
+
+
 @app.get("/")
 def root() -> Dict[str, str]:
     """Root endpoint to confirm the bot is running."""
@@ -136,6 +155,12 @@ def create_payment() -> Dict[str, Any]:
             status_code=400,
             content={"detail": str(exc)},
         )
+    except CircuitBreakerOpenError:
+        logger.warning("create_payment: Stripe circuit breaker open")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Stripe temporarily unavailable, try again shortly"},
+        )
     except Exception as exc:
         logger.exception("create_payment: unexpected Stripe error")
         return JSONResponse(
@@ -169,6 +194,12 @@ def maps_test() -> Any:
             status_code=400,
             content={"detail": str(exc)},
         )
+    except CircuitBreakerOpenError:
+        logger.warning("maps_test: Google Maps circuit breaker open")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Google Maps temporarily unavailable, try again shortly"},
+        )
     except Exception as exc:
         logger.exception("maps_test: unexpected Google Maps error")
         return JSONResponse(
@@ -201,6 +232,12 @@ def calendar_test() -> Any:
         return JSONResponse(
             status_code=400,
             content={"detail": str(exc)},
+        )
+    except CircuitBreakerOpenError:
+        logger.warning("calendar_test: Google Calendar circuit breaker open")
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Google Calendar temporarily unavailable, try again shortly"},
         )
     except Exception as exc:
         logger.exception("calendar_test: unexpected Google Calendar error")
