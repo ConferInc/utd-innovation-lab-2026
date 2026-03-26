@@ -17,7 +17,7 @@ X-Twilio-Signature: <Twilio_Signature>
 Body:  
 MessageSid=<Auto_Generated>&From=<Sender_Number>&Body=Hi&ProfileName=<WhatsApp_Profile_Name>  
 Expected: 200 OK  
-Reply: Hello! How can I help you today?
+Reply: Radhe Radhe! It's wonderful to connect with you. How may I assist you today at the JKYog Radha Krishna Temple? 
 
 ---
 
