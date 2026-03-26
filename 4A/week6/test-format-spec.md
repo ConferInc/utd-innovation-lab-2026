@@ -92,6 +92,24 @@ Endpoint: POST /create-payment
   - 401 Unauthorized
 
 ---
+## Test Variables & Placeholders
+
+To ensure test cases remain reusable and not hardcoded, the following placeholders are used across all requests. Testers should replace these with appropriate values during execution.
+
+### Webhook Variables
+
+- `<Auto_Generated>` → Twilio-generated MessageSid (automatically created per request)  
+- `<Sender_Number>` → WhatsApp sender number (e.g., whatsapp:+1XXXXXXXXXX)  
+- `<WhatsApp_Profile_Name>` → Sender’s WhatsApp display name  
+- `<Twilio_Signature>` → Valid X-Twilio-Signature generated using TWILIO_AUTH_TOKEN  
+
+### Payment Variables
+
+- `<Donation_Amount>` → Any positive numeric value (e.g., 25, 50, 100)  
+- `<Currency>` → Currency code (default: usd)  
+- `<User_Type>` → User type for payment flow (e.g., guest, registered) 
+
+---
 
 ## Notes
 
