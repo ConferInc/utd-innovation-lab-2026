@@ -172,7 +172,7 @@ flowchart TD
 
 ## Environment variables
 
-**See full guide:** `4B/week6/docs/environment-variables.md`
+**See full guide:** [Environment Variables Guide](docs/environment-variables.md)
 
 ### Required
 - `DATABASE_URL`
@@ -185,7 +185,7 @@ flowchart TD
 
 ## Deploy to Render
 
-**See full guide:** 4B/week6/docs/render-deployment.md
+**See full guide:** [Render Deployment Guide](docs/render-deployment.md)
 ### Build Command
 ```bash
 pip install --upgrade pip
@@ -230,7 +230,7 @@ https://<your-service>.onrender.com/webhook/whatsapp
 ---
 
 ## Troubleshooting
-**See full guide:** `4B/week6/docs/troubleshooting.md`
+**See full guide:** [Troubleshooting Guide](docs/troubleshooting.md)
 
 ---
 
