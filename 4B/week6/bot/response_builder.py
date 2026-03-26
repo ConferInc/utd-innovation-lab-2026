@@ -72,27 +72,49 @@ except ImportError:
     CalendarWrapper = None
     print("Warning: CalendarWrapper not found (service_wrappers/calendar_wrapper.py)")
 
+try:
+    from ..service_wrappers.base_wrapper import CircuitBreakerOpenError
+except ImportError:
+    CircuitBreakerOpenError = None
+
 
 TEMPLE_ADDRESS = "1450 North Watters Road, Allen, TX 75013"
 TEMPLE_NAME = "JKYog Radha Krishna Temple"
 
 logger = logging.getLogger(__name__)
 
-_BOT_SYSTEM_PROMPT = """You are a helpful WhatsApp assistant for JKYog Radha Krishna Temple located in Allen, Texas.
+_UNIFIED_SYSTEM_PROMPT = """You are the warm, spiritually uplifting WhatsApp assistant for JKYog Radha Krishna Temple in Allen, Texas.
 
-Your tone is warm, concise, and spiritually uplifting. You represent the temple with care and respect.
+Analyze the User Message and provided Context, then respond ONLY with a valid JSON object in this exact format (no explanation, no markdown, no code fences):
+{"intent": "<intent>", "confidence": <float 0.0-1.0>, "reply_text": "<string>", "next_action": "<string or null>"}
 
-Rules:
-- Use the provided context to answer accurately. Do not make up information.
-- Keep responses under 250 words and easy to read on a phone screen.
-- Use simple bullet points with • (not markdown headers or bold).
-- If the context does not contain enough information, be honest and direct the user to call (469) 606-3119 or visit jkyog.org.
-- Never mention that you are using a knowledge base or AI."""
+Intent values: greeting | faq_query | event_query | donation_request | directions_request | unknown
+
+Content rules:
+- Variety: Never start with the same opening phrase twice in a row. Rotate respectful greetings: "Namaste", "Radhe Radhe", "Hari Om", "It is a joy to assist you", "Blessings to you", "Jai Shri Krishna".
+- Context Integration: Weave facts (address, event times, donation link) naturally into warm sentences. Do not just list raw data.
+- Recovery Menu: If confidence < 0.7 OR intent is unknown, set reply_text to a graceful recovery menu. Example: "I'm not quite sure I caught that. 🙏 Would you like to hear about:\n• Upcoming Events\n• Temple Directions\n• Donation Information\n• Temple Hours & Info\n\nOr type Menu."
+- Tone: Concise, mobile-friendly, under 250 words. Use only simple bullet points with •. No bold text or markdown headers.
+- Honesty: If Context does not contain the answer, direct the user to jkyog.org or (469) 606-3119. Never mention AI or knowledge bases."""
+
+_BOT_SYSTEM_PROMPT = """You are the warm, spiritually uplifting WhatsApp assistant for JKYog Radha Krishna Temple in Allen, Texas.
+
+Response Guidelines:
+- Variety over Repetition: Never start messages with the same phrase. Rotate respectful greetings: "Namaste", "Radhe Radhe", "Hari Om", "It is a joy to assist you".
+- Context Integration: Weave facts (address, event times, donation link) naturally into warm sentences rather than just listing them.
+- Fallback Grace: If the intent is unclear, offer a graceful Recovery Menu with bullet options rather than a generic "I don't know."
+- Honesty: If Context does not contain the answer, direct the user to jkyog.org or call (469) 606-3119.
+
+Formatting:
+- Keep responses under 250 words and optimized for mobile screens.
+- Use only simple bullet points with •. No bold text or markdown headers.
+- Never mention AI, knowledge bases, or the underlying technology."""
 
 
 def _generate_with_gemini(user_message: str, context: str) -> str | None:
     """
     Generate a conversational response using Gemini with the given context.
+    Legacy path used when single-call is disabled or fails.
     Returns None if Gemini is unavailable or errors.
     """
     if not _GOOGLE_AVAILABLE or not os.getenv("GOOGLE_API_KEY"):
@@ -106,12 +128,92 @@ def _generate_with_gemini(user_message: str, context: str) -> str | None:
             config=genai_types.GenerateContentConfig(
                 system_instruction=_BOT_SYSTEM_PROMPT,
                 temperature=0.4,
-                max_output_tokens=400,
+                max_output_tokens=600,
             ),
         )
         return response.text.strip()
     except Exception as exc:
-        print(f"Gemini response generation error: {exc}")
+        logger.warning("Gemini response generation error: %s", exc)
+        return None
+
+
+def _build_mixed_context(user_message: str) -> str:
+    """
+    Build a rich context block for the unified single-call path.
+    Combines top KB matches (FAQs + events) with static temple info and donation link
+    so Gemini can choose the best answer in one call.
+    """
+    parts: list[str] = []
+
+    results = search_kb(user_message, top_k=5)
+    faq_parts: list[str] = []
+    event_parts: list[str] = []
+    for r in results:
+        if r["type"] == "faq" and len(faq_parts) < 2:
+            faq = r["payload"]
+            faq_parts.append(f"Q: {faq.get('question', '')}\nA: {faq.get('answer', '')}")
+        elif r["type"] == "event" and len(event_parts) < 2:
+            e = r["payload"]
+            event_line = f"Event: {e.get('title', '')}"
+            if e.get("day"):
+                event_line += f" | When: {e['day']}"
+                if e.get("start_time"):
+                    event_line += f" at {e['start_time']}"
+            event_parts.append(event_line)
+
+    if faq_parts:
+        parts.append("FAQs:\n" + "\n\n".join(faq_parts))
+    if event_parts:
+        parts.append("Events:\n" + "\n".join(event_parts))
+
+    parts.append(
+        f"Temple: {TEMPLE_NAME}\n"
+        f"Address: {TEMPLE_ADDRESS}\n"
+        "Phone: (469) 606-3119\n"
+        "Website: jkyog.org"
+    )
+
+    try:
+        donation_link = get_donation_link(temple_slug="dallas")
+        parts.append(f"Donation link: {donation_link}")
+    except Exception:
+        pass
+
+    return "\n\n---\n\n".join(parts)
+
+
+def _single_call_gemini(user_message: str, context: str) -> dict | None:
+    """
+    Single Gemini call that classifies intent and generates the reply together.
+    Returns {"intent": str, "confidence": float, "reply_text": str, "next_action": str|None}
+    or None on any failure so the caller can fall back to the legacy pipeline.
+    """
+    if not _GOOGLE_AVAILABLE or not os.getenv("GOOGLE_API_KEY"):
+        return None
+    try:
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+        prompt = f"Context:\n{context}\n\nUser message: {user_message}"
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL_RESPONSE", "gemini-2.5-flash"),
+            contents=prompt,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=_UNIFIED_SYSTEM_PROMPT,
+                temperature=0.4,
+                max_output_tokens=700,
+            ),
+        )
+        raw = response.text.strip()
+        # Strip markdown code fences the model may add despite instructions
+        raw = re.sub(r"^```(?:json)?\s*|\s*```$", "", raw, flags=re.MULTILINE).strip()
+        result = json.loads(raw)
+        return {
+            "intent": result.get("intent", "unknown"),
+            "confidence": float(result.get("confidence", 0.0)),
+            "reply_text": (result.get("reply_text") or "").strip(),
+            "next_action": result.get("next_action"),
+        }
+    except Exception as exc:
+        logger.warning("Single-call Gemini failed, falling back to legacy: %s", exc)
         return None
 
 
@@ -223,9 +325,11 @@ def _get_directions_text_from_maps_wrapper(user_location: str) -> str:
                 lines.append(f"{idx}. {instruction}")
 
         return "\n".join(lines).strip() or "❌ Could not find directions for that route."
+    except CircuitBreakerOpenError:
+        logger.warning("MapsWrapper directions circuit breaker open")
+        return ""
     except Exception as exc:
         logger.exception("MapsWrapper directions failed")
-        print(f"MapsWrapper directions failed: {exc}")
         return ""
 
 
@@ -277,9 +381,11 @@ def _get_calendar_events_from_wrapper(date_str: Optional[str]) -> list[Dict]:
             simplified = simplified[:5]
 
         return simplified
+    except CircuitBreakerOpenError:
+        logger.warning("CalendarWrapper list_events circuit breaker open")
+        return []
     except Exception as exc:
         logger.exception("CalendarWrapper list_events failed")
-        print(f"CalendarWrapper list_events failed: {exc}")
         return []
 
 
@@ -491,57 +597,85 @@ def build_response(
     confidence: Optional[float] = None,
 ) -> str:
     """
-    Build complete bot response by orchestrating the full pipeline.
+    Build complete bot response.
 
-    Pipeline:
-    1. Classify intent (skipped if intent is passed in)
-    2. Extract entities
-    3. Route to appropriate handler
-    4. Handler fetches context and calls Gemini to generate response
-    5. Falls back to hardcoded string if Gemini is unavailable
+    Pipeline (when Gemini is available):
+    1. Build mixed context (top KB matches + static temple info + donation link).
+    2. Single Gemini call → intent + confidence + reply_text in one shot.
+    3. If directions intent + user has a location → enrich reply with live Maps data.
+    4. Falls back to legacy classify + handler pipeline if single call fails.
+    5. Falls back to hardcoded strings if Gemini is unavailable.
 
-    Args:
-        user_message: The user's input message.
-        user_context: Optional context (user_id, conversation_id, etc.)
-        intent: Pre-classified intent — if provided, skips the classify call.
-        confidence: Confidence score matching the pre-classified intent.
-
-    Returns:
-        Formatted response string ready for WhatsApp.
+    Set env DISABLE_SINGLE_CALL=1 to force the legacy pipeline.
     """
     if not user_message or not user_message.strip():
         return handle_unknown(user_message)
 
     try:
+        use_single_call = (
+            _GOOGLE_AVAILABLE
+            and os.getenv("GOOGLE_API_KEY")
+            and os.getenv("DISABLE_SINGLE_CALL", "0") not in {"1", "true", "True", "yes"}
+        )
+
+        if use_single_call:
+            mixed_context = _build_mixed_context(user_message)
+            single = _single_call_gemini(user_message, mixed_context)
+
+            if single and single.get("reply_text"):
+                detected_intent = single["intent"]
+                detected_confidence = single["confidence"]
+                reply = single["reply_text"]
+
+                logger.info(
+                    "single_call | intent=%s | confidence=%.2f | next_action=%s",
+                    detected_intent,
+                    detected_confidence,
+                    single.get("next_action"),
+                )
+
+                # Enrich directions with live Maps data when user provided a location
+                if detected_intent == "directions_request":
+                    entities = extract_entities(user_message, detected_intent)
+                    user_location = entities.get("location")
+                    if user_location:
+                        directions_text = _get_directions_text_from_maps_wrapper(user_location)
+                        if directions_text and "❌" not in directions_text:
+                            reply = (
+                                f"Radhe Radhe! Here are your driving directions to {TEMPLE_NAME}:\n\n"
+                                f"{directions_text}\n\n"
+                                f"Address: {TEMPLE_ADDRESS}\n"
+                                "Ample parking is available on-site. 🙏"
+                            )
+
+                return reply
+
+        # --- Legacy fallback path ---
         if intent is None:
             intent_result = classify_intent(user_message)
             intent = intent_result["intent"]
             confidence = intent_result["confidence"]
 
         confidence = confidence or 0.0
-
-        print(f"Intent: {intent}, Confidence: {confidence:.2f}")
+        logger.info("legacy_path | intent=%s | confidence=%.2f", intent, confidence)
 
         entities = extract_entities(user_message, intent)
-        print(f"Entities: {entities}")
 
         if intent == "greeting":
-            response = handle_greeting(user_context)
+            return handle_greeting(user_context)
         elif intent == "faq_query":
-            response = handle_faq_query(user_message, entities)
+            return handle_faq_query(user_message, entities)
         elif intent == "event_query":
-            response = handle_event_query(user_message, entities)
+            return handle_event_query(user_message, entities)
         elif intent == "donation_request":
-            response = handle_donation(entities)
+            return handle_donation(entities)
         elif intent == "directions_request":
-            response = handle_directions(user_message, entities)
+            return handle_directions(user_message, entities)
         else:
-            response = handle_unknown(user_message)
+            return handle_unknown(user_message)
 
-        return response
-
-    except Exception as e:
-        print(f"Error in build_response: {e}")
+    except Exception as exc:
+        logger.exception("Error in build_response: %s", exc)
         return "I'm experiencing technical difficulties. Please try again or contact the temple at (469) 606-3119."
 
 
