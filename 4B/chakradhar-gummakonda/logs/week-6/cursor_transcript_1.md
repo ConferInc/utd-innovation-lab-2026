@@ -284,13 +284,12 @@ Team 4B backend strips whatsapp: prefix and + sign.
 
 Example:
 
-whatsapp:+19725550123 → 19725550123
+
 2. Unified Internal JSON Schema
 After Twilio ingestion, backend converts incoming payload into one internal JSON object.
 
 {
   "message_id": "SM12345",
-  "user_id": "19725550123",
   "user_name": "John",
   "text": "Temple timings",
   "timestamp": "2026-03-17T18:30:00Z",
@@ -359,7 +358,7 @@ Inbound Twilio Request
 POST /webhook/whatsapp
 Content-Type: application/x-www-form-urlencoded
 
-MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings
+MessageSid=SM67890&From=whatsapp%3A%2B&Body=Temple+timings
 Internal Processing
 Normalize sender number
 Fetch session
@@ -401,7 +400,7 @@ Here’s how the **Twilio contract you pasted** lines up with **what 4B has now*
 |----------|-------------------------|
 | `Content-Type: application/x-www-form-urlencoded` | **Match** — `verify_whatsapp_request` uses `await request.form()`. |
 | Fields: `MessageSid`, `From`, `Body`, `ProfileName` | **Partial** — Code uses `From`, `Body`, `ProfileName`. **`MessageSid` is not read/mapped** to `message_id` anywhere in the handler path you have. |
-| Normalize: strip `whatsapp:` **and** `+` → e.g. `19725550123` | **Partial** — Only `whatsapp:` is stripped; **`+` is not removed**, so you may still store/use `+19725550123` style values vs contract’s `user_id` digits-only. |
+| Normalize: strip `whatsapp:` **and** `+` → e.g.  | **Partial** — Only `whatsapp:` is stripped; **`+` is not removed**, so you may still store/use  style values vs contract’s `user_id` digits-only. |
 
 ---
 
@@ -521,7 +520,7 @@ So it’s not just “we accept Twilio forms”; it’s “we turn that into **o
 
 **Does not match the contract (important gaps):**
 
-- **Phone normalization:** The contract says: strip `whatsapp:` **and** remove **`+`**, so the user id looks like `19725550123`. Your code strips `whatsapp:` but **does not strip `+`**, so the stored/used number may still look like `+19725550123`. Small detail, but **4A’s “user_id” field won’t match** if they expect digits only.
+- **Phone normalization:** The contract says: strip `whatsapp:` **and** remove **`+`**, so the user id looks like  Your code strips `whatsapp:` but **does not strip `+`**, so the stored/used number may still look like . Small detail, but **4A’s “user_id” field won’t match** if they expect digits only.
 - **`MessageSid`:** The contract maps this to `message_id`. Your webhook path **doesn’t use `MessageSid`** in the flow we looked at, so you’re **not building** that part of the internal object.
 - **Unified internal JSON:** The contract shows one object with fields like `message_id`, `user_id`, `text`, `language`, `channel`, etc. Your app **does not** build that exact object for 4A; it uses **your DB models** (User, Conversation, Session) and other dicts. So **“same shape as the contract”** is **not** true today.
 
@@ -2072,7 +2071,6 @@ Stores a snapshot of conversation state at escalation time. Example:
   "latest_message": "I need to talk to someone",
   "intent": "human_escalation",
   "short_transcript": "User: temple timings\nBot: Temple opens at 9 AM...\nUser: I need to talk to someone",
-  "phone": "+19725550123",
   "name": "John"
 }
 ```
@@ -3652,7 +3650,6 @@ agreed with Rohan (API layer). Example:
   "latest_message": "I need to talk to someone",
   "intent": "human_escalation",
   "short_transcript": "User: temple timings\nBot: Temple opens at 9 AM...\nUser: I need to talk to someone",
-  "phone": "+19725550123",
   "name": "John"
 }
 ```
