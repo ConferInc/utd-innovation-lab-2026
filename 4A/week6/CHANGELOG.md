@@ -1,8 +1,6 @@
----
-
 # Changelog: JKYog Bot API
 
-## [2.0.0] - 2026-03-25
+## 2.0.0 - 2026-03-25
 
 ### Added
 
@@ -21,5 +19,4 @@
 - **Session statelessness:** Added `X-Session-Token` requirement for DB-backed logic.
 - **Inaccurate Answers:** Defined `KB_LOW_CONFIDENCE` to handle fuzzy search results.
 
----
 
