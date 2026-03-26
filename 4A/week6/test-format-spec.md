@@ -1,4 +1,4 @@
-# week6-test-case-fixes.md
+# test-format-spec.md
 
 ## Overview
 30 test scenarios for JKYog WhatsApp Bot:
