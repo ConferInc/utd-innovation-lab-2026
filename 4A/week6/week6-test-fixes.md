@@ -56,7 +56,9 @@ Reply: Great! Redirecting you to payment now.
 
 ### 5. Create Payment
 POST /create-payment  
-Content-Type: application/json  
+Content-Type: application/x-www-form-urlencoded  
+Body:  
+amount=<Donation_Amount>&currency=<Currency>&user=<User_Type>  
 Expected: 200 OK  
 Reply: Payment link generated successfully.
 
@@ -242,7 +244,9 @@ Reply: Missing authentication signature.
 
 ### 23. Stripe Failure
 POST /create-payment  
-Content-Type: application/json  
+Content-Type: application/x-www-form-urlencoded  
+Body:  
+amount=<Donation_Amount>&currency=<Currency>&user=<User_Type>  
 Expected: 500 Internal Server Error  
 Reply: Payment service is currently unavailable.
 
