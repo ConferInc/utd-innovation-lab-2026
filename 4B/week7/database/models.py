@@ -13,22 +13,16 @@ T = TypeVar("T")
 
 
 def _get_database_url() -> str:
-    """Return the configured database URL for SQLAlchemy.
-
-    Normalizes legacy postgres:// URLs to postgresql:// for SQLAlchemy.
-    """
+    """Return normalized database URL from DATABASE_URL env var."""
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise RuntimeError("DATABASE_URL is not set")
-
     if db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
-
     return db_url
 
 
 def _env_int(name: str, default: int) -> int:
-    """Read an integer environment variable with a fallback default."""
     value = os.getenv(name)
     if value is None:
         return default
@@ -39,7 +33,6 @@ def _env_int(name: str, default: int) -> int:
 
 
 def _env_float(name: str, default: float) -> float:
-    """Read a float environment variable with a fallback default."""
     value = os.getenv(name)
     if value is None:
         return default
@@ -54,7 +47,7 @@ def _run_with_retry(
     retries: int | None = None,
     base_delay_seconds: float | None = None,
 ) -> T:
-    """Run a database operation with exponential backoff retries."""
+    """Execute a database operation with exponential-backoff retries."""
     max_attempts = retries or _env_int("DB_CONNECT_RETRIES", 4)
     base_delay = (
         base_delay_seconds
@@ -74,9 +67,7 @@ def _run_with_retry(
             delay = base_delay * (2 ** (attempt - 1))
             time.sleep(delay)
 
-    raise RuntimeError(
-        f"Database operation failed after {max_attempts} attempts"
-    ) from last_error
+    raise RuntimeError(f"Database operation failed after {max_attempts} attempts") from last_error
 
 
 convention = {
@@ -100,15 +91,11 @@ engine = create_engine(
     pool_use_lifo=True,
 )
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine,
-)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
 def get_db() -> Generator[Session, None, None]:
-    """Yield a database session for FastAPI dependency injection."""
+    """Yield a SQLAlchemy session and ensure it is closed after use."""
     db = SessionLocal()
     try:
         yield db
@@ -117,56 +104,67 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def _execute_health_query() -> None:
-    """Run a lightweight query used by the DB health endpoint."""
+    """Run a lightweight connectivity query."""
     with engine.connect() as connection:
         connection.execute(text("SELECT 1"))
 
 
 def _execute_escalations_probe() -> None:
-    """Verify the escalations table is queryable."""
+    """Verify escalations table can be queried."""
     with engine.connect() as connection:
         connection.execute(text("SELECT 1 FROM escalations LIMIT 1"))
 
 
+def _execute_events_probe() -> None:
+    """Verify events table can be queried."""
+    with engine.connect() as connection:
+        connection.execute(text("SELECT 1 FROM events LIMIT 1"))
+
+
 def check_db_health() -> dict[str, Any]:
-    """Check whether the application can connect to the database
-    and whether the escalations table is reachable."""
+    """Return service health based on connection and table probes."""
     try:
         _run_with_retry(_execute_health_query)
     except Exception as exc:
-        return {
-            "status": "error",
-            "database": "disconnected",
-            "detail": str(exc),
-        }
+        return {"status": "error", "database": "disconnected", "detail": str(exc)}
 
     escalations_ok = True
+    events_ok = True
+
     try:
         _run_with_retry(_execute_escalations_probe, retries=2, base_delay_seconds=0.5)
     except Exception:
         escalations_ok = False
 
-    if escalations_ok:
+    try:
+        _run_with_retry(_execute_events_probe, retries=2, base_delay_seconds=0.5)
+    except Exception:
+        events_ok = False
+
+    if escalations_ok and events_ok:
         return {
             "status": "ok",
             "database": "connected",
-            "tables": {"escalations": "ok"},
+            "tables": {"escalations": "ok", "events": "ok"},
         }
+
     return {
         "status": "degraded",
         "database": "connected",
-        "tables": {"escalations": "unreachable"},
+        "tables": {
+            "escalations": "ok" if escalations_ok else "unreachable",
+            "events": "ok" if events_ok else "unreachable",
+        },
     }
 
 
 def init_db() -> None:
-    """Run Alembic migrations to bring the database schema up to date."""
-    week7_dir = Path(__file__).resolve().parent.parent
-    alembic_ini = week7_dir / "alembic.ini"
+    """Apply Alembic migrations"""
+    week_dir = Path(__file__).resolve().parent.parent
+    alembic_ini = week_dir / "alembic.ini"
     if not alembic_ini.is_file():
         raise FileNotFoundError(f"Alembic config not found: {alembic_ini}")
 
     cfg = Config(str(alembic_ini))
-    cfg.set_main_option("script_location", str(week7_dir / "migrations"))
-
+    cfg.set_main_option("script_location", str(week_dir / "migrations"))
     _run_with_retry(lambda: command.upgrade(cfg, "head"))
