@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from database.event_storage import build_dedup_key, is_event_stale, normalize_event_payload
+from events.storage.event_storage import build_dedup_key, is_event_stale, normalize_event_payload
 
 
 def test_build_dedup_key_is_deterministic() -> None:

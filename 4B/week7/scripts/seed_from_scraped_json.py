@@ -13,9 +13,9 @@ from typing import Any, Dict, List
 from sqlalchemy.orm import Session
 
 try:
-    from ..database.event_storage import upsert_events
+    from ..events.storage.event_storage import upsert_events
 except ImportError:
-    from database.event_storage import upsert_events
+    from events.storage.event_storage import upsert_events
 
 
 def _load_input(path: Path) -> List[Dict[str, Any]]:
