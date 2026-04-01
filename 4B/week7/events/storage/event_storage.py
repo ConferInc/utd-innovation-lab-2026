@@ -8,7 +8,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
-from database.schema import Event, EventSourceSite
+try:
+    from ...database.schema import Event, EventSourceSite
+except ImportError:
+    from database.schema import Event, EventSourceSite
 
 
 WEEKDAY_NAMES = {

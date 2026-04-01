@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
+from ..authentication.internal_bearer import verify_escalations_bearer
 from ..authentication.session_manager import update_session_context
 from ..database.models import get_db
 from ..database.schema import Escalation
@@ -22,7 +23,10 @@ from ..database.state_tracking import (
 
 logger = logging.getLogger("week7.escalations")
 
-router = APIRouter(tags=["escalations"])
+router = APIRouter(
+    tags=["escalations"],
+    dependencies=[Depends(verify_escalations_bearer)],
+)
 
 
 def _dt_iso(dt: Optional[datetime]) -> Optional[str]:
