@@ -1,6 +1,6 @@
 import pytest
 
-from week7.integrations.stripe import StripeIntegration
+from integrations.stripe import StripeIntegration
 
 
 def test_handle_payment_intent_succeeded():
