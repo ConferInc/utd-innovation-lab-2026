@@ -191,5 +191,17 @@ Before asking for help, verify the following:
 - The database is reachable
 - The external API keys are valid
 
+## 13. Stripe Webhook Issues
+### Webhook returns 400
+- Cause: Missing or invalid Stripe-Signature header
+- Fix: Ensure STRIPE_WEBHOOK_SECRET is set correctly
+
+### Stripe library not installed
+- Cause: Missing dependency
+- Fix: pip install stripe
+
+### Payment events not processed
+- Check webhook route is registered in main.py
+- Check logs for event_type
 ---
 *Documentation created and maintained by Leena Hussein — Documentation Lead, Group 4*

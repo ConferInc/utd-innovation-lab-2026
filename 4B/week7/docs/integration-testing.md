@@ -67,7 +67,26 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
-## 5. Required Environment Variables
+## 5. Admin Runbook
+### Running the Event Pipeline
+
+1. Run scraper:
+   python scripts/scrape_events.py
+
+2. Seed database:
+   python scripts/seed_database.py
+
+3. Verify data:
+   GET /events/today
+
+### Refreshing Data
+- Re-run scraper and seed scripts
+
+### Monitoring
+- Check logs for scraper errors
+- Verify database entries are updated
+
+## 6. Required Environment Variables
 The current implementation depends on the following environment variables:
 
 - TWILIO_ACCOUNT_SID
@@ -85,7 +104,7 @@ The current implementation depends on the following environment variables:
 These values are referenced by the main application and integration modules.
 
 
-### 5.1 Example `.env` Template
+### 6.1 Example `.env` Template
 
 ```env
 TWILIO_ACCOUNT_SID=your_twilio_sid
@@ -104,37 +123,37 @@ STRIPE_HOUSTON_LINK=https://buy.stripe.com/test_houston
 LOG_LEVEL=INFO
 ```
 
-## 6. Available Test Endpoints
+## 7. Available Test Endpoints
 
 The main application currently exposes these endpoints:
 
-### 6.1 GET /health
+### 7.1 GET /health
 Returns:
 ```json
 {"status": "ok"}
 ```
 
-### 6.2 GET /
+### 7.2 GET /
 Returns:
 ```json
 {"message": "JKYog WhatsApp Bot is running"}
 ```
 
-### 6.3 POST /create-payment
+### 7.3 POST /create-payment
 Creates a Stripe payment intent through the Stripe integration client and returns a client_secret.
 
-### 6.4 GET /maps
+### 7.4 GET /maps
 Runs a Google Maps geocode test using "Dallas".
 
-### 6.5 GET /calendar
+### 7.5 GET /calendar
 Runs a Google Calendar or knowledge-base event test using the calendar integration client.
 
-### 6.6 POST /webhook/whatsapp
+### 7.6 POST /webhook/whatsapp
 Main WhatsApp webhook endpoint for inbound user messages. This is the primary endpoint for end-to-end integration testing.
 
 
 
-## 7. End-to-End Webhook Flow
+## 8. End-to-End Webhook Flow
 
 The webhook flow in main.py is:
 
@@ -171,9 +190,9 @@ The webhook flow in main.py is:
 
 
 
-## 8. Team 4A Contract Requirements
+## 9. Team 4A Contract Requirements
 
-### 8.1 Inbound Request Format
+### 9.1 Inbound Request Format
 - Content-Type: application/x-www-form-urlencoded  
 
 Expected fields:
@@ -182,14 +201,14 @@ Expected fields:
 - Body
 - ProfileName  
 
-### 8.2 Normalization Rule
+### 9.2 Normalization Rule
 - Remove "whatsapp:"
 - Remove "+"
 
 Example:
 whatsapp:+19725550123 → 19725550123  
 
-### 8.3 Internal Unified JSON Schema
+### 9.3 Internal Unified JSON Schema
 
 Expected structure:
 - message_id
@@ -201,12 +220,12 @@ Expected structure:
 - session_token
 - channel  
 
-### 8.4 Required Headers
+### 9.4 Required Headers
 - Content-Type: application/x-www-form-urlencoded  
 - X-Session-Token  
 - Authorization: Bearer token  
 
-### 8.5 Expected Success Response
+### 9.5 Expected Success Response
 - status: success  
 - reply_text: bot message  
 - next_state: conversation state  
@@ -214,7 +233,7 @@ Expected structure:
 
 Note: reply_text must match the Twilio outbound message.
 
-### 8.6 Expected Error Codes
+### 9.6 Expected Error Codes
 - 200 → ignored events  
 - 400 → invalid input  
 - 401 → auth failure  
@@ -222,16 +241,16 @@ Note: reply_text must match the Twilio outbound message.
 
 
 
-## 9. Authentication and Security Testing
+## 10. Authentication and Security Testing
 
-### 9.1 What to Validate
+### 10.1 What to Validate
 - Webhook request parsing works
 - Non-message events are ignored
 - Session handling works
 - Invalid payloads are rejected
 - Errors are logged properly 
 
-### 9.2 Auth Test Cases
+### 10.2 Auth Test Cases
 
 Test Case A — Valid Request  
 - Expected: request processed successfully  
@@ -250,9 +269,9 @@ Test Case E — Internal Failure
 
 
 
-## 10. Service Integration Test Scenarios
+## 11. Service Integration Test Scenarios
 
-### 10.1 Donation Flow (Stripe)
+### 11.1 Donation Flow (Stripe)
 - returns temple-specific Stripe link  
 - fallback: default Stripe link  
 
@@ -261,7 +280,7 @@ Test input:
 
 
 
-### 10.2 Directions Flow (Google Maps)
+### 11.2 Directions Flow (Google Maps)
 - returns directions with distance + duration  
 - fallback: placeholder message  
 
@@ -269,7 +288,7 @@ Test input:
 "How do I get to the temple from downtown Dallas?"
 
 
-### 10.3 Event Inquiry Flow (Calendar)
+### 11.3 Event Inquiry Flow (Calendar)
 - primary: Google Calendar API  
 - fallback: knowledge_base/events.json  
 - fallback 2: built-in data  
@@ -279,7 +298,7 @@ Test input:
 
 
 
-## 11. Online Integration Testing Procedure
+## 12. Online Integration Testing Procedure
 
 Step 1: Run the app  
 Step 2: Check /health and /  
@@ -308,7 +327,7 @@ Step 7: Capture:
 
 
 
-## 12. Offline Testing with Mock Server
+## 13. Offline Testing with Mock Server
 
 Purpose:
 - simulate API responses without real services  
@@ -325,7 +344,7 @@ Mock should simulate:
 
 The offline mock configuration is stored in `mock-server-config.json`. It simulates webhook, donation, directions, and calendar responses so Group 4B can validate request/response handling even when Team 4A’s live API or external services are unavailable.
 
-## 13. Expected vs Actual Response Comparison
+## 14. Expected vs Actual Response Comparison
 
 
 | Area | Expected | Actual | Status |
@@ -339,7 +358,7 @@ The offline mock configuration is stored in `mock-server-config.json`. It simula
 
 
 
-## 14. Known Integration Gaps
+## 15. Known Integration Gaps
 
 - reply_text vs reply mismatch  
 - next_state missing  
@@ -348,7 +367,7 @@ The offline mock configuration is stored in `mock-server-config.json`. It simula
 
 ---
 
-## 15. Troubleshooting
+## 16. Troubleshooting
 
 App not running:
 - check env
@@ -372,7 +391,7 @@ Stripe:
 
 ---
 
-## 16. Cross-Team Test Evidence Checklist
+## 17. Cross-Team Test Evidence Checklist
 
 - WhatsApp screenshot  
 - request logs  
@@ -383,7 +402,7 @@ Stripe:
 
 ---
 
-## 17. Recommended Minimum Test Set
+## 18. Recommended Minimum Test Set
 
 1. donation  
 2. directions  
@@ -393,7 +412,25 @@ Stripe:
 6. error case  
 
 ---
+## 19. Event Pipeline Architecture
+The system processes temple event data through the following pipeline:
 
-## 18. Conclusion
+1. Scraper
+   - Extracts event data from temple websites
+
+2. Database
+   - Stores structured event data
+
+3. API Layer
+   - Exposes endpoints such as /events and /events/today
+
+4. Bot Integration
+   - Uses event data to respond to user queries
+
+This pipeline ensures real-time access to temple events.
+
+---
+
+## 20. Conclusion
 
 This document ensures Group 4B’s WhatsApp bot is tested against the shared API contract and ready for cross-team integration validation.

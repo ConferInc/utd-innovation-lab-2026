@@ -31,6 +31,21 @@ All of these variables must be configured in the render dashboard under the envi
 
 ---
 
+## Stripe Configuration
+
+STRIPE_SECRET_KEY – Used to create payment intents
+STRIPE_WEBHOOK_SECRET – Used to verify incoming Stripe webhooks
+
+---
+
+## Event Pipeline
+
+SCRAPER_TARGET_URLS – URLs for temple websites
+SCRAPER_INTERVAL – Frequency of scraping
+DATABASE_URL – Database connection string
+
+---
+
 ## Example `.env` File
 
 ```env
