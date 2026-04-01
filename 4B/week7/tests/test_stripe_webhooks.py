@@ -1,6 +1,13 @@
 import pytest
+import importlib.util
+from pathlib import Path
 
-from integrations.stripe import StripeIntegration
+stripe_path = Path(__file__).resolve().parents[1] / "integrations" / "stripe.py"
+spec = importlib.util.spec_from_file_location("stripe_module", stripe_path)
+stripe_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stripe_module)
+
+StripeIntegration = stripe_module.StripeIntegration
 
 
 def test_handle_payment_intent_succeeded():
