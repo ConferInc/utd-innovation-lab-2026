@@ -95,6 +95,13 @@ _RANGE_SAME_MONTH = re.compile(
     re.IGNORECASE,
 )
 
+# e.g. "Apr 1st, 2026" or "April 4th, 2026, 11:00 AM" (temple / Webflow copy)
+_ORDINAL_DATE = re.compile(
+    r"\b(?P<mon>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+"
+    r"(?P<day>\d{1,2})(?:st|nd|rd|th)?,?\s*(?P<year>\d{4})",
+    re.IGNORECASE,
+)
+
 _HAS_TIME = re.compile(r"\b\d{1,2}:\d{2}\b")
 
 
@@ -138,7 +145,30 @@ def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
         except ValueError:
             pass
 
-    # 2) Same-month range: Mar 26-29, 2026
+    # 2) Ordinal dates: Apr 1st, 2026 …
+    om = _ORDINAL_DATE.search(text)
+    if om:
+        # Slice from the date token onward; stop before a second date clause (em dash / "&").
+        end_i = min(len(text), om.end() + 40)
+        snippet = text[om.start() : end_i]
+        for sep in ("\u2014", "\u2013", " & ", " \u0026 "):  # em dash, en dash, ampersand clauses
+            if sep in snippet:
+                snippet = snippet.split(sep)[0].strip()
+                break
+        try:
+            now_local = datetime.now(_default_tz())
+            dt = dateutil_parser.parse(snippet, fuzzy=True, default=now_local)
+            if 1990 <= dt.year <= 2100:
+                has_explicit_time = bool(_HAS_TIME.search(snippet))
+                if not has_explicit_time and dt.hour == 0 and dt.minute == 0 and dt.second == 0:
+                    return _local_date_at_default_time(dt.date()), None
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=_default_tz())
+                return _to_storage_iso_utc(dt), None
+        except (ValueError, TypeError, OverflowError):
+            pass
+
+    # 3) Same-month range: Mar 26-29, 2026
     m = _RANGE_SAME_MONTH.search(text)
     if m:
         month_s = m.group("m")
@@ -152,7 +182,7 @@ def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
         except ValueError:
             pass
 
-    # 3) dateutil fuzzy on full text
+    # 4) dateutil fuzzy on full text
     try:
         now_local = datetime.now(_default_tz())
         dt = dateutil_parser.parse(text, fuzzy=True, default=now_local)

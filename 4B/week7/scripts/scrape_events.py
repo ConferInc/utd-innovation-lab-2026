@@ -12,6 +12,8 @@ if str(_week_dir) not in sys.path:
     sys.path.insert(0, str(_week_dir))
 
 from events.scrapers.http_client import ScraperConfig
+from events.scrapers.jkyog import DEFAULT_JKYOG_CALENDAR_URL
+from events.scrapers.radhakrishnatemple import DEFAULT_TEMPLE_HOMEPAGE_URL
 from events.scrapers.scrape_all import scrape_all_events
 
 
@@ -29,12 +31,12 @@ def main() -> None:
     parser.add_argument("--output", default=str(_default_output_path()), help="Output JSON path")
     parser.add_argument(
         "--temple-url",
-        default=os.getenv("RADHAKRISHNA_TEMPLE_HOMEPAGE_URL", "https://radhakrishnatemple.net/"),
+        default=os.getenv("RADHAKRISHNA_TEMPLE_HOMEPAGE_URL", DEFAULT_TEMPLE_HOMEPAGE_URL),
         help="Temple homepage URL",
     )
     parser.add_argument(
         "--jkyog-url",
-        default=os.getenv("JKYOG_UPCOMING_EVENTS_URL", "https://jkyog.org/upcoming_events"),
+        default=os.getenv("JKYOG_UPCOMING_EVENTS_URL", DEFAULT_JKYOG_CALENDAR_URL),
         help="JKYog upcoming events URL",
     )
     args = parser.parse_args()

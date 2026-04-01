@@ -49,6 +49,13 @@ def test_extract_april_date_phrase() -> None:
     assert is_valid_storage_datetime(start)
 
 
+def test_extract_ordinal_month_day_year() -> None:
+    text = "Hanuman Jayanti Apr 1st, 2026, 06:00 PM — Apr 4th, 2026, 10:30 AM"
+    start, end = extract_event_datetimes(text)
+    assert start is not None
+    assert is_valid_storage_datetime(start)
+
+
 def test_extract_returns_none_for_empty() -> None:
     assert extract_event_datetimes("") == (None, None)
     assert extract_event_datetimes("   ") == (None, None)

@@ -6,8 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .datetime_extract import is_valid_storage_datetime
 from .http_client import RespectfulHttpClient, ScraperConfig
-from .jkyog import scrape_jkyog_upcoming_events
-from .radhakrishnatemple import scrape_radhakrishnatemple
+from .jkyog import DEFAULT_JKYOG_CALENDAR_URL, scrape_jkyog_upcoming_events
+from .radhakrishnatemple import DEFAULT_TEMPLE_HOMEPAGE_URL, scrape_radhakrishnatemple
 
 logger = logging.getLogger(__name__)
 
@@ -25,8 +25,8 @@ def _dedup_key(payload: Dict[str, Any]) -> Tuple[str, str, str]:
 
 def scrape_all_events(
     *,
-    temple_homepage_url: str = "https://radhakrishnatemple.net/",
-    jkyog_calendar_url: str = "https://jkyog.org/upcoming_events",
+    temple_homepage_url: str = DEFAULT_TEMPLE_HOMEPAGE_URL,
+    jkyog_calendar_url: str = DEFAULT_JKYOG_CALENDAR_URL,
     config: Optional[ScraperConfig] = None,
 ) -> Dict[str, Any]:
     """
