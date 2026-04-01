@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
+from .datetime_extract import extract_event_datetimes
 from .http_client import RespectfulHttpClient
 
 logger = logging.getLogger(__name__)
@@ -87,19 +88,22 @@ def scrape_jkyog_upcoming_events(
                     title = _clean_text(title_node.get_text(" ", strip=True))
             title = title or _clean_text(card_text.split("|")[0]) or "Untitled Event"
 
-            # JKYog pages often include date/time strings but parsing is inconsistent.
-            # Emit null start/end unless an ISO-like datetime is present.
-            start_dt = None
-            iso_match = re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})?", card_text)
-            if iso_match:
-                start_dt = iso_match.group(0)
+            start_dt, end_dt = extract_event_datetimes(card_text)
+            if not start_dt and link:
+                try:
+                    detail_html = client.get_text(link)
+                    detail_soup = BeautifulSoup(detail_html, "lxml")
+                    detail_blob = detail_soup.get_text("\n", strip=True)
+                    start_dt, end_dt = extract_event_datetimes(detail_blob)
+                except Exception as fetch_exc:
+                    logger.debug("JKYog detail fetch skipped for %s: %s", link, fetch_exc)
 
             events.append(
                 {
                     "name": title,
                     "description": None,
                     "start_datetime": start_dt,
-                    "end_datetime": None,
+                    "end_datetime": end_dt,
                     "location": "JKYog Radha Krishna Temple",
                     "venue_details": None,
                     "parking_notes": None,

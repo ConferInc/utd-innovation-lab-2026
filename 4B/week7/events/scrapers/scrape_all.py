@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
+from .datetime_extract import is_valid_storage_datetime
 from .http_client import RespectfulHttpClient, ScraperConfig
 from .jkyog import scrape_jkyog_upcoming_events
 from .radhakrishnatemple import scrape_radhakrishnatemple
@@ -35,7 +36,8 @@ def scrape_all_events(
       {
         "scraped_at": "...Z",
         "events": [ {event_payload}, ... ],
-        "errors": [ {source, stage, url, error}, ... ]
+        "errors": [ {source, stage, url, error}, ... ],
+        "skipped_invalid_datetime": int
       }
     """
 
@@ -48,10 +50,28 @@ def scrape_all_events(
         combined.extend(temple.events)
         combined.extend(jkyog.events)
 
+        errors: List[Dict[str, Any]] = [*temple.errors, *jkyog.errors]
+        skipped_invalid = 0
+        validated: List[Dict[str, Any]] = []
+        for event in combined:
+            if not is_valid_storage_datetime(event.get("start_datetime")):
+                skipped_invalid += 1
+                errors.append(
+                    {
+                        "source": event.get("source_site", "unknown"),
+                        "stage": "missing_or_invalid_start_datetime",
+                        "url": event.get("source_url", ""),
+                        "name": event.get("name"),
+                        "detail": "start_datetime missing or not parseable by storage layer",
+                    }
+                )
+                continue
+            validated.append(event)
+
         # De-dupe across sources in-memory (best-effort). DB upsert layer will do final dedup.
         seen = set()
         deduped: List[Dict[str, Any]] = []
-        for event in combined:
+        for event in validated:
             k = _dedup_key(event)
             if k in seen:
                 continue
@@ -61,7 +81,8 @@ def scrape_all_events(
         return {
             "scraped_at": _now_iso_z(),
             "events": deduped,
-            "errors": [*temple.errors, *jkyog.errors],
+            "errors": errors,
+            "skipped_invalid_datetime": skipped_invalid,
         }
     finally:
         client.close()

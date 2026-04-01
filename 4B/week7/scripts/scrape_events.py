@@ -47,9 +47,14 @@ def main() -> None:
 
     out_path = Path(args.output).resolve()
     _write_json(out_path, payload)
-    print(f"Wrote {len(payload.get('events', []))} events to {out_path}")
-    if payload.get("errors"):
-        print(f"Non-fatal errors: {len(payload['errors'])}")
+    n_events = len(payload.get("events", []))
+    n_errors = len(payload.get("errors", []))
+    n_skipped = int(payload.get("skipped_invalid_datetime", 0))
+    print(f"Wrote {n_events} events to {out_path}")
+    if n_skipped:
+        print(f"Skipped (missing/invalid start_datetime): {n_skipped}")
+    if n_errors:
+        print(f"Errors logged: {n_errors}")
 
 
 if __name__ == "__main__":

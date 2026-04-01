@@ -9,6 +9,7 @@ from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
+from .datetime_extract import extract_event_datetimes
 from .http_client import RespectfulHttpClient
 
 logger = logging.getLogger(__name__)
@@ -110,16 +111,13 @@ def _parse_detail_page(detail_html: str, *, url: str) -> Dict[str, Any]:
     if og_img and og_img.get("content"):
         image_url = og_img.get("content")
 
-    # Datetime parsing is highly inconsistent; emit nulls unless we find ISO-like strings.
-    # The normalization layer (and/or Chakradhar's storage) will validate required start_datetime.
-    start_dt = None
-    end_dt = None
-    text_blob = soup.get_text("\n", strip=True)
-    iso_candidates = re.findall(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})?", text_blob)
-    if iso_candidates:
-        # crude: take first candidate; keep as string in output payload
-        start_dt = re.search(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2})?(Z|[+-]\d{2}:\d{2})?", text_blob)
-        start_dt = start_dt.group(0) if start_dt else None
+    body_text = soup.get_text("\n", strip=True)
+    text_blob = "\n".join(
+        part
+        for part in (title, description or "", body_text)
+        if part
+    )
+    start_dt, end_dt = extract_event_datetimes(text_blob)
 
     special_notes = _extract_first(
         soup,
