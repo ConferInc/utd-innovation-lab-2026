@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
 try:
@@ -379,17 +379,22 @@ def search_events(db: Session, query: str, *, limit: int = 10, offset: int = 0) 
         return []
 
     like_pattern = f"%{cleaned_query}%"
+    name_match = Event.name.ilike(like_pattern)
     return (
         db.query(Event)
         .filter(
             or_(
-                Event.name.ilike(like_pattern),
+                name_match,
                 Event.description.ilike(like_pattern),
                 Event.category.ilike(like_pattern),
                 Event.special_notes.ilike(like_pattern),
             )
         )
-        .order_by(Event.start_datetime.asc(), Event.id.asc())
+        .order_by(
+            case((name_match, 0), else_=1),
+            Event.start_datetime.asc(),
+            Event.id.asc(),
+        )
         .offset(max(offset, 0))
         .limit(max(limit, 1))
         .all()

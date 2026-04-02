@@ -8,20 +8,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from ..database.models import get_db
-from ..events.storage.event_storage import (
-    event_to_dict,
-    get_event_by_id,
-    get_recurring_events,
-    get_today_events,
-    get_upcoming_events,
-    search_events,
-    serialize_events,
-)
+from ..events.services.event_query_cache import get_shared_event_query_cache
+from ..events.services.event_service import EventService
 
 router = APIRouter(tags=["events"])
 
 _DEFAULT_LIMIT = 10
 _MAX_LIMIT = 100
+
+
+def get_event_service(db: Session = Depends(get_db)) -> EventService:
+    return EventService(db, cache=get_shared_event_query_cache())
 
 
 def _validate_pagination(limit: int, offset: int) -> None:
@@ -36,37 +33,37 @@ def _validate_pagination(limit: int, offset: int) -> None:
 
 @router.get("")
 def list_upcoming_events(
-    db: Session = Depends(get_db),
+    service: EventService = Depends(get_event_service),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
 ) -> Dict[str, Any]:
     """All upcoming events (paginated): active one-offs and active recurring programs."""
     _validate_pagination(limit, offset)
-    rows = get_upcoming_events(db, limit=limit, offset=offset)
+    events = service.get_upcoming_events(limit=limit, offset=offset)
     return {
-        "events": serialize_events(rows),
+        "events": events,
         "limit": limit,
         "offset": offset,
     }
 
 
 @router.get("/today")
-def list_today_events(db: Session = Depends(get_db)) -> Dict[str, List[Dict[str, Any]]]:
+def list_today_events(service: EventService = Depends(get_event_service)) -> Dict[str, List[Dict[str, Any]]]:
     """Today's one-off events plus recurring programs active today."""
-    rows = get_today_events(db)
-    return {"events": serialize_events(rows)}
+    return {"events": service.get_today_events()}
 
 
 @router.get("/recurring")
-def list_recurring_programs(db: Session = Depends(get_db)) -> Dict[str, List[Dict[str, Any]]]:
+def list_recurring_programs(
+    service: EventService = Depends(get_event_service),
+) -> Dict[str, List[Dict[str, Any]]]:
     """All recurring programs."""
-    rows = get_recurring_events(db)
-    return {"events": serialize_events(rows)}
+    return {"events": service.get_recurring_events()}
 
 
 @router.get("/search")
 def search_event_list(
-    db: Session = Depends(get_db),
+    service: EventService = Depends(get_event_service),
     q: Optional[str] = Query(None),
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
@@ -78,9 +75,9 @@ def search_event_list(
             detail="Query parameter 'q' is required and must be non-empty",
         )
     _validate_pagination(limit, offset)
-    rows = search_events(db, q, limit=limit, offset=offset)
+    events = service.search_events(q, limit=limit, offset=offset)
     return {
-        "events": serialize_events(rows),
+        "events": events,
         "limit": limit,
         "offset": offset,
         "q": q.strip(),
@@ -88,9 +85,9 @@ def search_event_list(
 
 
 @router.get("/{event_id}")
-def get_event_detail(event_id: int, db: Session = Depends(get_db)) -> Dict[str, Any]:
+def get_event_detail(event_id: int, service: EventService = Depends(get_event_service)) -> Dict[str, Any]:
     """Single event by primary key."""
-    event = get_event_by_id(db, event_id)
+    event = service.get_event_by_id(event_id)
     if event is None:
         raise HTTPException(status_code=404, detail="Event not found")
-    return event_to_dict(event)
+    return event
