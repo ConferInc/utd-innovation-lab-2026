@@ -5,10 +5,13 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from sqlalchemy import and_, func, or_
+from sqlalchemy import and_, case, func, or_
 from sqlalchemy.orm import Session
 
-from database.schema import Event, EventSourceSite
+try:
+    from ...database.schema import Event, EventSourceSite
+except ImportError:
+    from database.schema import Event, EventSourceSite
 
 
 WEEKDAY_NAMES = {
@@ -286,14 +289,28 @@ def get_upcoming_events(
     offset: int = 0,
     now_utc: Optional[datetime] = None,
 ) -> List[Event]:
+    """
+    Paginated upcoming events: one-off sessions that have not ended, plus recurring
+    programs that are still active (no end date or end in the future).
+
+    Non-recurring rows sort before recurring so near-term dated events surface first.
+    """
     now = now_utc or _now()
+    one_off_upcoming = and_(
+        Event.is_recurring.is_(False),
+        or_(
+            Event.start_datetime >= now,
+            and_(Event.end_datetime.isnot(None), Event.end_datetime >= now),
+        ),
+    )
+    recurring_active = and_(
+        Event.is_recurring.is_(True),
+        or_(Event.end_datetime.is_(None), Event.end_datetime >= now),
+    )
     return (
         db.query(Event)
-        .filter(
-            Event.is_recurring.is_(False),
-            or_(Event.start_datetime >= now, and_(Event.end_datetime.isnot(None), Event.end_datetime >= now)),
-        )
-        .order_by(Event.start_datetime.asc(), Event.id.asc())
+        .filter(or_(one_off_upcoming, recurring_active))
+        .order_by(Event.is_recurring.asc(), Event.start_datetime.asc(), Event.id.asc())
         .offset(max(offset, 0))
         .limit(max(limit, 1))
         .all()
@@ -362,17 +379,22 @@ def search_events(db: Session, query: str, *, limit: int = 10, offset: int = 0) 
         return []
 
     like_pattern = f"%{cleaned_query}%"
+    name_match = Event.name.ilike(like_pattern)
     return (
         db.query(Event)
         .filter(
             or_(
-                Event.name.ilike(like_pattern),
+                name_match,
                 Event.description.ilike(like_pattern),
                 Event.category.ilike(like_pattern),
                 Event.special_notes.ilike(like_pattern),
             )
         )
-        .order_by(Event.start_datetime.asc(), Event.id.asc())
+        .order_by(
+            case((name_match, 0), else_=1),
+            Event.start_datetime.asc(),
+            Event.id.asc(),
+        )
         .offset(max(offset, 0))
         .limit(max(limit, 1))
         .all()

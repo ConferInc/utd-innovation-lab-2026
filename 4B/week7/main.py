@@ -28,6 +28,7 @@ from .bot.intent_classifier import classify_intent
 from .bot.response_builder import build_response
 from .api.escalations import router as escalations_router
 from .api.stripe_webhooks import router as stripe_webhook_router
+from .api.events import router as events_router
 from .database.models import SessionLocal, check_db_health, get_db, init_db
 from .database.state_tracking import log_message
 from .service_wrappers import StripeWrapper, MapsWrapper, CalendarWrapper
@@ -64,7 +65,12 @@ app = FastAPI(
 )
 
 app.include_router(escalations_router, prefix="/escalations")
+
 app.include_router(stripe_webhook_router)
+
+app.include_router(events_router, prefix="/events")
+
+
 
 def send_whatsapp_message(to: str, body: str) -> str:
     """Send a text message to a WhatsApp user via Twilio."""

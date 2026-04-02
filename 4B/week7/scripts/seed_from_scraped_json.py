@@ -13,8 +13,10 @@ from typing import Any, Dict, List
 from sqlalchemy.orm import Session
 
 try:
+    from ..events.services.event_query_cache import invalidate_events_cache
     from ..events.storage.event_storage import upsert_events
 except ImportError:
+    from events.services.event_query_cache import invalidate_events_cache
     from events.storage.event_storage import upsert_events
 
 
@@ -40,4 +42,5 @@ def seed_from_file(db: Session, input_path: str) -> Dict[str, int]:
     events = _load_input(Path(input_path).resolve())
     stats = upsert_events(db, events)
     stats["input_count"] = len(events)
+    invalidate_events_cache()
     return stats
