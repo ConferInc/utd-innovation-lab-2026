@@ -289,14 +289,28 @@ def get_upcoming_events(
     offset: int = 0,
     now_utc: Optional[datetime] = None,
 ) -> List[Event]:
+    """
+    Paginated upcoming events: one-off sessions that have not ended, plus recurring
+    programs that are still active (no end date or end in the future).
+
+    Non-recurring rows sort before recurring so near-term dated events surface first.
+    """
     now = now_utc or _now()
+    one_off_upcoming = and_(
+        Event.is_recurring.is_(False),
+        or_(
+            Event.start_datetime >= now,
+            and_(Event.end_datetime.isnot(None), Event.end_datetime >= now),
+        ),
+    )
+    recurring_active = and_(
+        Event.is_recurring.is_(True),
+        or_(Event.end_datetime.is_(None), Event.end_datetime >= now),
+    )
     return (
         db.query(Event)
-        .filter(
-            Event.is_recurring.is_(False),
-            or_(Event.start_datetime >= now, and_(Event.end_datetime.isnot(None), Event.end_datetime >= now)),
-        )
-        .order_by(Event.start_datetime.asc(), Event.id.asc())
+        .filter(or_(one_off_upcoming, recurring_active))
+        .order_by(Event.is_recurring.asc(), Event.start_datetime.asc(), Event.id.asc())
         .offset(max(offset, 0))
         .limit(max(limit, 1))
         .all()

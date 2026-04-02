@@ -40,7 +40,7 @@ def list_upcoming_events(
     limit: int = Query(_DEFAULT_LIMIT),
     offset: int = Query(0),
 ) -> Dict[str, Any]:
-    """All upcoming non-recurring events (paginated)."""
+    """All upcoming events (paginated): active one-offs and active recurring programs."""
     _validate_pagination(limit, offset)
     rows = get_upcoming_events(db, limit=limit, offset=offset)
     return {
