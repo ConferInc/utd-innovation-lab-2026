@@ -1,0 +1,262 @@
+============================================================
+  DB CONNECTION HARDENING -- STRESS TEST v2 (Week 6)
+============================================================
+  Target:       https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/health/db
+  Timeout:      10.0s
+
+  Expected app-side pool settings:
+    pool_size       = 5 (default)
+    max_overflow    = 2 (default)
+    pool_timeout    = 30 (default)s
+    pool_recycle    = 300 (default)s
+    pool_pre_ping   = True
+    pool_use_lifo   = True
+
+  Phases: warm-up -> burst -> sustained -> idle -> recovery -> rapid -> escalation probe
+
+============================================================
+  Phase 1: Warm-up  (serial x5)
+============================================================
+  [001] OK    status=200  latency=663.0ms
+  [002] OK    status=200  latency=334.8ms
+  [003] OK    status=200  latency=403.2ms
+  [004] OK    status=200  latency=233.5ms
+  [005] OK    status=200  latency=217.3ms
+
+  --- Warm-up stats ---
+  Requests: 5  |  OK: 5  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) -- min: 217.32  mean: 370.36  median: 334.83  p95: 662.99  p99: 662.99  max: 662.99
+
+============================================================
+  Phase 2: Concurrent Burst  (concurrent x50, workers=10)
+============================================================
+  [001] OK    status=200  latency=429.0ms
+  [002] OK    status=200  latency=428.8ms
+  [003] OK    status=200  latency=442.2ms
+  [004] OK    status=200  latency=442.9ms
+  [005] OK    status=200  latency=458.4ms
+  [006] OK    status=200  latency=527.9ms
+  [007] OK    status=200  latency=531.1ms
+  [008] OK    status=200  latency=527.9ms
+  [009] OK    status=200  latency=543.4ms
+  [010] OK    status=200  latency=542.1ms
+  [011] OK    status=200  latency=200.0ms
+  [012] OK    status=200  latency=215.5ms
+  [013] OK    status=200  latency=206.0ms
+  [014] OK    status=200  latency=217.2ms
+  [015] OK    status=200  latency=212.0ms
+  [016] OK    status=200  latency=232.3ms
+  [017] OK    status=200  latency=347.0ms
+  [018] OK    status=200  latency=333.7ms
+  [019] OK    status=200  latency=350.3ms
+  [020] OK    status=200  latency=220.7ms
+  [021] OK    status=200  latency=228.9ms
+  [022] OK    status=200  latency=364.0ms
+  [023] OK    status=200  latency=219.5ms
+  [024] OK    status=200  latency=217.7ms
+  [025] OK    status=200  latency=243.4ms
+  [026] OK    status=200  latency=216.2ms
+  [027] OK    status=200  latency=299.1ms
+  [028] OK    status=200  latency=218.7ms
+  [029] OK    status=200  latency=338.8ms
+  [030] OK    status=200  latency=226.7ms
+  [031] OK    status=200  latency=338.8ms
+  [032] OK    status=200  latency=223.6ms
+  [033] OK    status=200  latency=225.6ms
+  [034] OK    status=200  latency=230.0ms
+  [035] OK    status=200  latency=212.0ms
+  [036] OK    status=200  latency=239.8ms
+  [037] OK    status=200  latency=209.2ms
+  [038] OK    status=200  latency=233.1ms
+  [039] OK    status=200  latency=192.3ms
+  [040] OK    status=200  latency=225.8ms
+  [041] OK    status=200  latency=213.6ms
+  [042] OK    status=200  latency=229.8ms
+  [043] OK    status=200  latency=213.7ms
+  [044] OK    status=200  latency=240.1ms
+  [045] OK    status=200  latency=232.0ms
+  [046] OK    status=200  latency=239.4ms
+  [047] OK    status=200  latency=236.8ms
+  [048] OK    status=200  latency=206.5ms
+  [049] OK    status=200  latency=217.7ms
+  [050] OK    status=200  latency=223.2ms
+
+  --- Burst stats ---
+  Requests: 50  |  OK: 50  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) -- min: 192.28  mean: 291.29  median: 231.04  p95: 531.08  p99: 543.38  max: 543.38
+
+============================================================
+  Phase 3: Sustained Load (round 1/3)  (concurrent x25, workers=10)
+============================================================
+  [001] OK    status=200  latency=356.5ms
+  [002] OK    status=200  latency=396.5ms
+  [003] OK    status=200  latency=385.0ms
+  [004] OK    status=200  latency=397.4ms
+  [005] OK    status=200  latency=382.0ms
+  [006] OK    status=200  latency=407.9ms
+  [007] OK    status=200  latency=393.9ms
+  [008] OK    status=200  latency=460.4ms
+  [009] OK    status=200  latency=449.7ms
+  [010] OK    status=200  latency=492.7ms
+  [011] OK    status=200  latency=211.4ms
+  [012] OK    status=200  latency=207.3ms
+  [013] OK    status=200  latency=191.3ms
+  [014] OK    status=200  latency=193.7ms
+  [015] OK    status=200  latency=205.7ms
+  [016] OK    status=200  latency=203.2ms
+  [017] OK    status=200  latency=225.5ms
+  [018] OK    status=200  latency=203.8ms
+  [019] OK    status=200  latency=198.6ms
+  [020] OK    status=200  latency=224.2ms
+  [021] OK    status=200  latency=201.6ms
+  [022] OK    status=200  latency=191.6ms
+  [023] OK    status=200  latency=212.3ms
+  [024] OK    status=200  latency=208.8ms
+  [025] OK    status=200  latency=233.3ms
+
+  Pausing 2.0s between rounds...
+
+============================================================
+  Phase 3: Sustained Load (round 2/3)  (concurrent x25, workers=10)
+============================================================
+  [001] OK    status=200  latency=185.5ms
+  [002] OK    status=200  latency=196.8ms
+  [003] OK    status=200  latency=208.1ms
+  [004] OK    status=200  latency=220.3ms
+  [005] OK    status=200  latency=256.8ms
+  [006] OK    status=200  latency=260.2ms
+  [007] OK    status=200  latency=265.7ms
+  [008] OK    status=200  latency=370.1ms
+  [009] OK    status=200  latency=387.7ms
+  [010] OK    status=200  latency=394.3ms
+  [011] OK    status=200  latency=206.6ms
+  [012] OK    status=200  latency=203.3ms
+  [013] OK    status=200  latency=215.0ms
+  [014] OK    status=200  latency=202.3ms
+  [015] OK    status=200  latency=210.1ms
+  [016] OK    status=200  latency=223.3ms
+  [017] OK    status=200  latency=218.9ms
+  [018] OK    status=200  latency=214.6ms
+  [019] OK    status=200  latency=205.1ms
+  [020] OK    status=200  latency=202.1ms
+  [021] OK    status=200  latency=206.5ms
+  [022] OK    status=200  latency=227.9ms
+  [023] OK    status=200  latency=211.3ms
+  [024] OK    status=200  latency=217.8ms
+  [025] OK    status=200  latency=208.7ms
+
+  Pausing 2.0s between rounds...
+
+============================================================
+  Phase 3: Sustained Load (round 3/3)  (concurrent x25, workers=10)
+============================================================
+  [001] OK    status=200  latency=193.4ms
+  [002] OK    status=200  latency=205.6ms
+  [003] OK    status=200  latency=257.8ms
+  [004] OK    status=200  latency=265.2ms
+  [005] OK    status=200  latency=377.0ms
+  [006] OK    status=200  latency=376.5ms
+  [007] OK    status=200  latency=375.9ms
+  [008] OK    status=200  latency=382.9ms
+  [009] OK    status=200  latency=200.7ms
+  [010] OK    status=200  latency=414.2ms
+  [011] OK    status=200  latency=191.2ms
+  [012] OK    status=200  latency=208.5ms
+  [013] OK    status=200  latency=355.2ms
+  [014] OK    status=200  latency=209.6ms
+  [015] OK    status=200  latency=216.2ms
+  [016] OK    status=200  latency=220.0ms
+  [017] OK    status=200  latency=211.9ms
+  [018] OK    status=200  latency=212.3ms
+  [019] OK    status=200  latency=235.8ms
+  [020] OK    status=200  latency=652.8ms
+  [021] OK    status=200  latency=203.7ms
+  [022] OK    status=200  latency=225.9ms
+  [023] OK    status=200  latency=223.4ms
+  [024] OK    status=200  latency=216.8ms
+  [025] OK    status=200  latency=221.3ms
+
+  --- Sustained stats ---
+  Requests: 75  |  OK: 75  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) -- min: 185.47  mean: 266.77  median: 217.78  p95: 449.65  p99: 652.76  max: 652.76
+
+============================================================
+  Phase 4: Simulated Idle Wait (30.0s)
+  Simulating period where connections may go stale.
+  pool_pre_ping validates connections before reuse.
+============================================================
+  Idle period complete.
+
+============================================================
+  Phase 5: Post-Idle Recovery  (serial x5)
+============================================================
+  [001] OK    status=200  latency=230.1ms
+  [002] OK    status=200  latency=195.2ms
+  [003] OK    status=200  latency=215.0ms
+  [004] OK    status=200  latency=208.7ms
+  [005] OK    status=200  latency=230.5ms
+
+  --- Post-idle recovery stats ---
+  Requests: 5  |  OK: 5  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) -- min: 195.16  mean: 215.89  median: 214.99  p95: 230.47  p99: 230.47  max: 230.47
+
+============================================================
+  Phase 6: Rapid Reconnect Burst  (concurrent x20, workers=10)
+============================================================
+  [001] OK    status=200  latency=188.3ms
+  [002] OK    status=200  latency=192.0ms
+  [003] OK    status=200  latency=195.5ms
+  [004] OK    status=200  latency=206.5ms
+  [005] OK    status=200  latency=205.2ms
+  [006] OK    status=200  latency=275.4ms
+  [007] OK    status=200  latency=280.4ms
+  [008] OK    status=200  latency=290.7ms
+  [009] OK    status=200  latency=315.1ms
+  [010] OK    status=200  latency=348.9ms
+  [011] OK    status=200  latency=211.1ms
+  [012] OK    status=200  latency=214.2ms
+  [013] OK    status=200  latency=207.4ms
+  [014] OK    status=200  latency=206.5ms
+  [015] OK    status=200  latency=222.7ms
+  [016] OK    status=200  latency=203.7ms
+  [017] OK    status=200  latency=240.1ms
+  [018] OK    status=200  latency=210.8ms
+  [019] OK    status=200  latency=211.3ms
+  [020] OK    status=200  latency=304.5ms
+
+  --- Rapid reconnect stats ---
+  Requests: 20  |  OK: 20  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) -- min: 188.32  mean: 236.51  median: 211.16  p95: 348.87  p99: 348.87  max: 348.87
+
+============================================================
+  Phase 7: Escalation Table Probe  (serial x10)
+============================================================
+  [001] OK    status=200  latency=219.6ms
+  [002] OK    status=200  latency=223.1ms
+  [003] OK    status=200  latency=208.9ms
+  [004] OK    status=200  latency=206.5ms
+  [005] OK    status=200  latency=225.2ms
+  [006] OK    status=200  latency=227.4ms
+  [007] OK    status=200  latency=222.0ms
+  [008] OK    status=200  latency=214.5ms
+  [009] OK    status=200  latency=208.2ms
+  [010] OK    status=200  latency=219.5ms
+
+  --- Escalation probe stats ---
+  Requests: 10  |  OK: 10  |  FAIL: 0  |  Rate: 100.0%
+  Latency (ms) -- min: 206.53  mean: 217.5  median: 219.55  p95: 227.42  p99: 227.42  max: 227.42
+
+============================================================
+  FINAL REPORT
+============================================================
+  Total requests:   165
+  Total successes:  165
+  Total failures:   0
+  Success rate:     100.0%
+  Total time:       43589ms (43.6s)
+  Throughput:       3.8 req/s
+  Latency (ms):     min=185.47  mean=269.14  median=222.69  p95=460.4  p99=652.76  max=662.99  stddev=97.79
+
+  Full report saved to: stress_test_results_v2.json
+
+  RESULT: PASS -- all requests succeeded, pool hardening + escalation probe validated.
