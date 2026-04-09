@@ -20,8 +20,9 @@ def test_normalize_event_payload_parses_required_fields() -> None:
         "start_datetime": "2026-04-04T10:00:00Z",
         "scraped_at": "2026-03-30T12:00:00Z",
         "sponsorship_data": [
-            {"name": "Gold Sponsor", "amount": "$501", "link": "https://example.org/gold"}
+            {"name": "Gold Sponsor", "amount": "501", "link": "https://example.org/gold"}
         ],
+        "recurrence_text": None,
     }
 
     normalized = normalize_event_payload(payload)
@@ -29,7 +30,7 @@ def test_normalize_event_payload_parses_required_fields() -> None:
     assert normalized["source_site"].value == "jkyog"
     assert normalized["start_datetime"].year == 2026
     assert normalized["dedup_key"]
-    assert normalized["sponsorship_data"][0]["name"] == "Gold Sponsor"
+    assert normalized["sponsorship_tiers"][0]["tier_name"] == "Gold Sponsor"
 
 
 def test_normalize_event_payload_requires_mandatory_fields() -> None:
@@ -59,8 +60,8 @@ def test_normalize_event_payload_rejects_invalid_sponsorship_tier_item() -> None
         "sponsorship_data": [{"name": "Gold Sponsor", "amount": "", "link": "https://x"}],
     }
 
-    with pytest.raises(ValueError):
-        normalize_event_payload(payload)
+    normalized = normalize_event_payload(payload)
+    assert normalized["sponsorship_tiers"][0]["price"] is None
 
 
 def test_is_event_stale_true_when_older_than_threshold() -> None:

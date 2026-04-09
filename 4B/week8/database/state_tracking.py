@@ -11,7 +11,16 @@ from sqlalchemy.orm import Session
 from .schema import Conversation, Escalation, Message, SessionState, User
 
 
-VALID_ESCALATION_STATUSES = {"pending", "in_progress", "resolved"}
+VALID_ESCALATION_STATUSES = {"queued", "assigned", "resolved"}
+VALID_ESCALATION_PRIORITIES = {"low", "medium", "high", "critical"}
+
+
+def _next_state_for_queue_status(queue_status: str) -> str:
+    if queue_status == "assigned":
+        return "ACTIVE_HANDOFF"
+    if queue_status == "resolved":
+        return "RESOLVED"
+    return "WAITING_FOR_VOLUNTEER"
 
 
 def _now() -> datetime:
@@ -112,7 +121,7 @@ def log_message(
 def create_session(db: Session, user_id: uuid.UUID, ttl_minutes: int = 1440) -> SessionState:
     """Create a new active session for a user and deactivate older sessions.
 
-    The raw token is returned only as a transient ``raw_session_token`` attribute
+    The raw token is returned only as a transient `raw_session_token attribute
     on the returned SQLAlchemy object. The database stores only the hashed token.
     """
     now_utc = _now()
@@ -192,50 +201,51 @@ def merge_session_state(
 
 def create_escalation(
     db: Session,
-    user_id: uuid.UUID,
-    reason: str,
-    context: Optional[Dict[str, Any]] = None,
-    session_id: Optional[uuid.UUID] = None,
+    priority: str = "medium",
+    queue_status: str = "queued",
+    assigned_volunteer: Optional[str] = None,
+    next_state: Optional[str] = None,
+    message_for_user: Optional[str] = None,
+    success: bool = True,
+    errors: Optional[List[str]] = None,
 ) -> Escalation:
-    """Create a new escalation for a user.
-
-    If session_id is provided, validates that it belongs to the same user
-    to prevent cross-user data corruption.
-    """
-    if not isinstance(reason, str):
-        raise ValueError("reason must be a non-empty string")
-
-    cleaned_reason = reason.strip()
-    if not cleaned_reason:
-        raise ValueError("reason must be a non-empty string")
-
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise ValueError(f"User {user_id} does not exist")
-
-    if session_id is not None:
-        session_obj = (
-            db.query(SessionState)
-            .filter(
-                SessionState.id == session_id,
-                SessionState.user_id == user_id,
-            )
-            .first()
+    """Create a new escalation ticket aligned to the locked schema fields."""
+    cleaned_priority = priority.strip().lower() if isinstance(priority, str) else ""
+    if cleaned_priority not in VALID_ESCALATION_PRIORITIES:
+        raise ValueError(
+            f"Invalid priority '{priority}'. Must be one of: {', '.join(sorted(VALID_ESCALATION_PRIORITIES))}"
         )
-        if not session_obj:
-            raise ValueError(
-                f"session_id {session_id} does not exist "
-                f"or does not belong to user {user_id}"
-            )
 
-    now_utc = _now()
+    cleaned_status = queue_status.strip().lower() if isinstance(queue_status, str) else ""
+    if cleaned_status not in VALID_ESCALATION_STATUSES:
+        raise ValueError(
+            f"Invalid queue_status '{queue_status}'. Must be one of: {', '.join(sorted(VALID_ESCALATION_STATUSES))}"
+        )
+
+    cleaned_assigned = assigned_volunteer.strip() if isinstance(assigned_volunteer, str) else None
+    if cleaned_assigned == "":
+        cleaned_assigned = None
+
+    cleaned_message = message_for_user.strip() if isinstance(message_for_user, str) else ""
+    if cleaned_message == "":
+        cleaned_message = "I'm connecting you to a human volunteer now. Please hold on."
+
+    cleaned_errors: List[str] = []
+    if isinstance(errors, list):
+        for item in errors:
+            if isinstance(item, str):
+                text = item.strip()
+                if text:
+                    cleaned_errors.append(text)
+
     escalation = Escalation(
-        user_id=user_id,
-        session_id=session_id,
-        reason=cleaned_reason,
-        context=context or {},
-        status="pending",
-        created_at=now_utc,
+        success=bool(success),
+        queue_status=cleaned_status,
+        assigned_volunteer=cleaned_assigned,
+        next_state=(next_state.strip() if isinstance(next_state, str) else "") or _next_state_for_queue_status(cleaned_status),
+        message_for_user=cleaned_message,
+        priority=cleaned_priority,
+        errors=cleaned_errors,
     )
     db.add(escalation)
     db.commit()
@@ -245,66 +255,55 @@ def create_escalation(
 
 def update_escalation_status(
     db: Session,
-    escalation_id: uuid.UUID,
-    new_status: str,
-    resolved_by: Optional[str] = None,
-    note: Optional[str] = None,
+    ticket_id: uuid.UUID,
+    queue_status: str,
+    assigned_volunteer: Optional[str] = None,
+    error_note: Optional[str] = None,
 ) -> Optional[Escalation]:
     """Transition an escalation to a new status.
 
-    Sets resolved_at and resolved_by only when status becomes 'resolved'.
-    Clears them again if status is moved back to a non-resolved state.
+    Updates queue_status, next_state, and assigned_volunteer using the
+    finalized escalation schema fields.
     """
-    if new_status not in VALID_ESCALATION_STATUSES:
+    if queue_status not in VALID_ESCALATION_STATUSES:
         raise ValueError(
-            f"Invalid status '{new_status}'. "
+            f"Invalid status '{queue_status}'. "
             f"Must be one of: {', '.join(sorted(VALID_ESCALATION_STATUSES))}"
         )
 
-    escalation = db.query(Escalation).filter(Escalation.id == escalation_id).first()
+    escalation = db.query(Escalation).filter(Escalation.ticket_id == ticket_id).first()
     if not escalation:
         return None
 
-    escalation.status = new_status
+    escalation.queue_status = queue_status
+    escalation.next_state = _next_state_for_queue_status(queue_status)
 
-    if new_status == "resolved":
-        cleaned_resolved_by = None
-        if isinstance(resolved_by, str):
-            stripped_value = resolved_by.strip()
-            cleaned_resolved_by = stripped_value or None
-        escalation.resolved_at = _now()
-        escalation.resolved_by = cleaned_resolved_by
-    else:
-        escalation.resolved_at = None
-        escalation.resolved_by = None
+    if isinstance(assigned_volunteer, str):
+        cleaned_assigned = assigned_volunteer.strip() or None
+        if cleaned_assigned is not None:
+            escalation.assigned_volunteer = cleaned_assigned
 
-    if isinstance(note, str):
-        cleaned_note = note.strip()
+    if queue_status == "queued":
+        escalation.assigned_volunteer = None
+
+    if isinstance(error_note, str):
+        cleaned_note = error_note.strip()
         if cleaned_note:
-            ctx = escalation.context or {}
-            notes = ctx.get("status_notes", [])
-            notes.append(
-                {
-                    "status": new_status,
-                    "note": cleaned_note,
-                    "timestamp": _now().isoformat(),
-                }
-            )
-            ctx["status_notes"] = notes
-            escalation.context = ctx
+            errors = escalation.errors or []
+            errors.append(cleaned_note)
+            escalation.errors = errors
 
     db.commit()
     db.refresh(escalation)
     return escalation
 
 
-def get_escalations_by_user(
+def get_escalations_by_status(
     db: Session,
-    user_id: uuid.UUID,
     status: Optional[str] = None,
 ) -> List[Escalation]:
-    """Return all escalations for a user, optionally filtered by status."""
-    query = db.query(Escalation).filter(Escalation.user_id == user_id)
+    """Return all escalations, optionally filtered by status."""
+    query = db.query(Escalation)
 
     if status:
         if status not in VALID_ESCALATION_STATUSES:
@@ -312,9 +311,9 @@ def get_escalations_by_user(
                 f"Invalid status filter '{status}'. "
                 f"Must be one of: {', '.join(sorted(VALID_ESCALATION_STATUSES))}"
             )
-        query = query.filter(Escalation.status == status)
+        query = query.filter(Escalation.queue_status == status)
 
-    return query.order_by(Escalation.created_at.desc()).all()
+    return query.all()
 
 
 def get_escalation_by_id(
@@ -322,4 +321,4 @@ def get_escalation_by_id(
     escalation_id: uuid.UUID,
 ) -> Optional[Escalation]:
     """Fetch a single escalation by its primary key."""
-    return db.query(Escalation).filter(Escalation.id == escalation_id).first()
+    return db.query(Escalation).filter(Escalation.ticket_id == escalation_id).first() 

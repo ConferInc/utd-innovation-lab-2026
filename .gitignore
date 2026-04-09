@@ -5,3 +5,9 @@ node_modules/
 .env
 __pycache__/
 *.pyc
+
+# Run-output artifacts (Week 7+) — should not be in version control
+stress_test_results_*
+local_dev.db
+*.db
+.env.local

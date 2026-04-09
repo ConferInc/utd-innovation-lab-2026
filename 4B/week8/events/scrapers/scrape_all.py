@@ -19,7 +19,7 @@ def _now_iso_z() -> str:
 def _dedup_key(payload: Dict[str, Any]) -> Tuple[str, str, str]:
     name = str(payload.get("name") or "").strip().lower()
     start = str(payload.get("start_datetime") or "").strip()
-    location = str(payload.get("location") or "").strip().lower()
+    location = str(payload.get("location_name") or payload.get("location") or "").strip().lower()
     return (name, start, location)
 
 

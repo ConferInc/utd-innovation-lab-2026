@@ -32,8 +32,7 @@ from database.models import SessionLocal
 from database.schema import User
 from database.state_tracking import (
     create_escalation,
-    get_escalations_by_user,
-    get_or_create_user,
+    get_escalation_by_id,
     update_escalation_status,
 )
 
@@ -47,43 +46,27 @@ ESCALATIONS_REPORT_PATH = os.getenv(
 )
 
 
-def _create_unique_test_user() -> uuid.UUID:
-    """Create a unique test user for this run."""
-    db = SessionLocal()
-    try:
-        unique_suffix = uuid.uuid4().hex[:10]
-        phone = f"+1999{unique_suffix}"
-        user = get_or_create_user(db, phone, name="Escalation Stress Test User")
-        return user.id
-    finally:
-        db.close()
+def _create_unique_test_user() -> str:
+    """No longer used for escalations, but kept for compatibility with other tests."""
+    return "N/A"
 
 
-def _cleanup_test_user(user_id: uuid.UUID) -> None:
-    """Delete the test user so cascades remove all related stress-test rows."""
-    db = SessionLocal()
-    try:
-        user = db.query(User).filter(User.id == user_id).first()
-        if user:
-            db.delete(user)
-            db.commit()
-    finally:
-        db.close()
+def _cleanup_test_user(user_id: str) -> None:
+    """No longer used for escalations."""
+    pass
 
 
-def timed_create(user_id: uuid.UUID, index: int) -> dict:
+def timed_create(index: int) -> dict:
     """Create one escalation and measure latency."""
     db = SessionLocal()
     start = time.perf_counter()
     try:
         esc = create_escalation(
             db=db,
-            user_id=user_id,
-            reason=f"stress-test-{index}",
-            context={"test_index": index, "source": "stress_test"},
+            priority="medium",
         )
         latency = (time.perf_counter() - start) * 1000
-        return {"ok": True, "id": esc.id, "latency_ms": latency}
+        return {"ok": True, "id": esc.ticket_id, "latency_ms": latency}
     except Exception as exc:
         latency = (time.perf_counter() - start) * 1000
         return {"ok": False, "error": str(exc), "latency_ms": latency}
@@ -93,8 +76,8 @@ def timed_create(user_id: uuid.UUID, index: int) -> dict:
 
 def timed_status_update(
     escalation_id: uuid.UUID,
-    new_status: str,
-    resolved_by: str | None = None,
+    queue_status: str,
+    assigned_volunteer: str | None = None,
 ) -> dict:
     """Update escalation status and measure latency."""
     db = SessionLocal()
@@ -102,10 +85,10 @@ def timed_status_update(
     try:
         result = update_escalation_status(
             db=db,
-            escalation_id=escalation_id,
-            new_status=new_status,
-            resolved_by=resolved_by,
-            note=f"stress test transition to {new_status}",
+            ticket_id=escalation_id,
+            queue_status=queue_status,
+            assigned_volunteer=assigned_volunteer,
+            error_note=f"stress test transition to {queue_status}",
         )
         latency = (time.perf_counter() - start) * 1000
         return {"ok": result is not None, "latency_ms": latency}
@@ -116,12 +99,13 @@ def timed_status_update(
         db.close()
 
 
-def timed_query(user_id: uuid.UUID) -> dict:
-    """Query all escalations for a user and measure latency."""
+def timed_query() -> dict:
+    """Query all escalations and measure latency."""
     db = SessionLocal()
     start = time.perf_counter()
     try:
-        rows = get_escalations_by_user(db=db, user_id=user_id)
+        from database.state_tracking import get_escalations_by_status
+        rows = get_escalations_by_status(db=db)
         latency = (time.perf_counter() - start) * 1000
         return {"ok": True, "count": len(rows), "latency_ms": latency}
     except Exception as exc:
@@ -184,7 +168,7 @@ def main() -> int:
         print(f"\n  Phase 1: Serial Creates (x{SERIAL_CREATES})")
         serial_results = []
         for i in range(SERIAL_CREATES):
-            r = timed_create(user_id, i)
+            r = timed_create(i)
             serial_results.append(r)
             tag = "OK" if r["ok"] else "FAIL"
             print(f"    [{i+1:03d}] {tag}  latency={r['latency_ms']:.1f}ms")
@@ -199,7 +183,7 @@ def main() -> int:
         concurrent_results: list[dict] = []
         with ThreadPoolExecutor(max_workers=CONCURRENCY) as pool:
             futures = [
-                pool.submit(timed_create, user_id, i + SERIAL_CREATES)
+                pool.submit(timed_create, i + SERIAL_CREATES)
                 for i in range(CONCURRENT_CREATES)
             ]
             for i, future in enumerate(as_completed(futures), start=1):
@@ -222,34 +206,34 @@ def main() -> int:
         transition_results: list[dict] = []
         for i in range(transition_count):
             escalation_id = created_ids[i]
-            r1 = timed_status_update(escalation_id, "in_progress")
+            r1 = timed_status_update(escalation_id, "assigned")
             r2 = timed_status_update(
                 escalation_id,
                 "resolved",
-                resolved_by="stress-test-agent",
+                assigned_volunteer="stress-test-agent",
             )
             transition_results.extend([r1, r2])
             tag1 = "OK" if r1["ok"] else "FAIL"
             tag2 = "OK" if r2["ok"] else "FAIL"
             print(
-                f"    [{i+1:03d}] in_progress={tag1} ({r1['latency_ms']:.1f}ms)  "
+                f"    [{i+1:03d}] assigned={tag1} ({r1['latency_ms']:.1f}ms)  "
                 f"resolved={tag2} ({r2['latency_ms']:.1f}ms)"
             )
         s3 = print_stats("Status Transitions", transition_results)
         if s3["failures"] > 0:
             all_ok = False
 
-        print(f"\n  Phase 4: Query by User (x10)")
+        print(f"\n  Phase 4: Global Query (x10)")
         query_results = []
         for i in range(10):
-            r = timed_query(user_id)
+            r = timed_query()
             query_results.append(r)
             tag = "OK" if r["ok"] else "FAIL"
             print(
                 f"    [{i+1:03d}] {tag}  rows={r.get('count', '?')}  "
                 f"latency={r['latency_ms']:.1f}ms"
             )
-        s4 = print_stats("Query by User", query_results)
+        s4 = print_stats("Global Query", query_results)
         if s4["failures"] > 0:
             all_ok = False
 
@@ -270,7 +254,7 @@ def main() -> int:
                 "serial_creates": s1,
                 "concurrent_creates": s2,
                 "status_transitions": s3,
-                "query_by_user": s4,
+                "global_query": s4,
             },
             "overall": overall_stats,
             "result": "PASS" if all_ok else "FAIL",
@@ -289,4 +273,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main()) 

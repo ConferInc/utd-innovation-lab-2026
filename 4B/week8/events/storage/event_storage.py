@@ -1,3 +1,10 @@
+"""
+Event storage layer — upsert, query, deduplication.
+
+Two-stage dedup with per-upsert savepoints and deterministic SHA-256 keying.
+Schema aligned with Team 4A (Chanakya) canonical event model —
+sponsorship_tiers use {tier_name, price, description}.
+"""
 from __future__ import annotations
 
 import hashlib
@@ -10,8 +17,10 @@ from sqlalchemy.orm import Session
 
 try:
     from ...database.schema import Event, EventSourceSite
+    from ..schemas.event_payload import EventPayload
 except ImportError:
     from database.schema import Event, EventSourceSite
+    from events.schemas.event_payload import EventPayload
 
 
 WEEKDAY_NAMES = {
@@ -77,88 +86,187 @@ def _coerce_source_site(value: Any) -> EventSourceSite:
     raise ValueError("source_site must be one of: radhakrishnatemple, jkyog")
 
 
-def _validate_sponsorship_data(value: Any) -> List[Dict[str, str]]:
+def _coerce_bool(value: Any) -> Optional[bool]:
+    """Coerce a value to bool or None."""
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lower = value.strip().lower()
+        if lower in {"true", "1", "yes"}:
+            return True
+        if lower in {"false", "0", "no", ""}:
+            return False
+    return bool(value)
+
+
+def _validate_sponsorship_tiers(value: Any) -> List[Dict[str, Any]]:
+    """Validate sponsorship tiers using aligned format {tier_name, price, description}."""
     if value is None:
         return []
     if not isinstance(value, list):
-        raise ValueError("sponsorship_data must be a list of sponsorship tier objects")
+        raise ValueError("sponsorship_tiers must be a list of sponsorship tier objects")
 
-    validated: List[Dict[str, str]] = []
-    required_fields = ("name", "amount", "link")
+    validated: List[Dict[str, Any]] = []
 
     for index, item in enumerate(value):
         if not isinstance(item, dict):
-            raise ValueError(f"sponsorship_data[{index}] must be an object with name, amount, and link")
+            raise ValueError(f"sponsorship_tiers[{index}] must be an object with tier_name, price, description")
 
-        normalized_item: Dict[str, str] = {}
-        for field in required_fields:
-            raw_value = item.get(field)
-            if not isinstance(raw_value, str) or not raw_value.strip():
-                raise ValueError(f"sponsorship_data[{index}].{field} must be a non-empty string")
-            normalized_item[field] = raw_value.strip()
+        tier_name = item.get("tier_name")
+        if not isinstance(tier_name, str) or not tier_name.strip():
+            raise ValueError(f"sponsorship_tiers[{index}].tier_name must be a non-empty string")
 
-        validated.append(normalized_item)
+        price = item.get("price")
+        if price is not None:
+            try:
+                price = float(price)
+            except (TypeError, ValueError):
+                raise ValueError(f"sponsorship_tiers[{index}].price must be a number or null")
+
+        description = _clean_optional_text(item.get("description"))
+
+        validated.append({
+            "tier_name": tier_name.strip(),
+            "price": price,
+            "description": description,
+        })
 
     return validated
 
 
-def build_dedup_key(name: str, start_datetime: datetime, location: Optional[str]) -> str:
+def _validate_price(value: Any) -> Dict[str, Any]:
+    """Validate price object {amount, notes}."""
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("price must be an object with keys: amount, notes")
+    result: Dict[str, Any] = {}
+    amount = value.get("amount")
+    if amount is not None:
+        try:
+            result["amount"] = float(amount)
+        except (TypeError, ValueError):
+            raise ValueError("price.amount must be a number or null")
+    else:
+        result["amount"] = None
+    result["notes"] = _clean_optional_text(value.get("notes"))
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Dedup key
+# ---------------------------------------------------------------------------
+
+def build_dedup_key(name: str, start_datetime: datetime, location_name: Optional[str]) -> str:
     base = "|".join(
         [
             _normalize_text(name),
             start_datetime.strftime("%Y-%m-%dT%H:%M"),
-            _normalize_text(location),
+            _normalize_text(location_name),
         ]
     )
     return hashlib.sha256(base.encode("utf-8")).hexdigest()
 
+
+# ---------------------------------------------------------------------------
+# Payload normalization
+# ---------------------------------------------------------------------------
 
 def normalize_event_payload(
     payload: Dict[str, Any],
     *,
     default_scraped_at: Optional[datetime] = None,
 ) -> Dict[str, Any]:
-    name = (payload.get("name") or "").strip()
-    if not name:
-        raise ValueError("name is required")
+    """Normalize and validate a raw event payload dict for database insertion.
 
-    source_url = (payload.get("source_url") or "").strip()
-    if not source_url:
-        raise ValueError("source_url is required")
+    Handles both the old format (location, special_notes, sponsorship_data)
+    and the new aligned format (location_name, notes, sponsorship_tiers)
+    for backwards compatibility during the migration period.
+    """
+    canonical_payload = dict(payload)
+    if canonical_payload.get("location_name") in (None, "") and canonical_payload.get("location"):
+        canonical_payload["location_name"] = canonical_payload.get("location")
+    if canonical_payload.get("notes") in (None, "") and canonical_payload.get("special_notes"):
+        canonical_payload["notes"] = canonical_payload.get("special_notes")
+    if canonical_payload.get("sponsorship_tiers") is None and canonical_payload.get("sponsorship_data") is not None:
+        canonical_payload["sponsorship_tiers"] = canonical_payload.get("sponsorship_data")
+    if canonical_payload.get("recurrence_text") in (None, "") and canonical_payload.get("recurrence_pattern"):
+        canonical_payload["recurrence_text"] = canonical_payload.get("recurrence_pattern")
+    if not canonical_payload.get("scraped_at"):
+        canonical_payload["scraped_at"] = default_scraped_at or _now()
 
-    start_datetime = _parse_datetime(payload.get("start_datetime"))
-    if not start_datetime:
+    parsed = EventPayload.model_validate(canonical_payload)
+
+    name = parsed.name
+    source_url = str(parsed.source_url)
+    start_datetime = _parse_datetime(parsed.start_datetime)
+    if start_datetime is None:
         raise ValueError("start_datetime is required")
-
-    end_datetime = _parse_datetime(payload.get("end_datetime"))
-    scraped_at = _parse_datetime(payload.get("scraped_at")) or default_scraped_at or _now()
-    source_site = _coerce_source_site(payload.get("source_site"))
-
-    location = _clean_optional_text(payload.get("location"))
-    dedup_key = build_dedup_key(name=name, start_datetime=start_datetime, location=location)
-    sponsorship_data = _validate_sponsorship_data(payload.get("sponsorship_data"))
+    end_datetime = _parse_datetime(parsed.end_datetime)
+    scraped_at = _parse_datetime(parsed.scraped_at) or _now()
+    source_site = _coerce_source_site(parsed.source_site)
+    location_name = _clean_optional_text(parsed.location_name)
+    notes = _clean_optional_text(parsed.notes)
+    sponsorship_tiers = _validate_sponsorship_tiers(parsed.model_dump().get("sponsorship_tiers"))
+    price = _validate_price(parsed.model_dump().get("price"))
+    dedup_key = build_dedup_key(name=name, start_datetime=start_datetime, location_name=location_name)
 
     return {
+        # Identity
         "name": name,
+        "subtitle": _clean_optional_text(payload.get("subtitle")),
         "description": _clean_optional_text(payload.get("description")),
+        # Categorization
+        "category": _clean_optional_text(parsed.category),
+        "event_type": _clean_optional_text(parsed.event_type),
+        # Recurrence
+        "is_recurring": bool(parsed.is_recurring),
+        "recurrence_pattern": _clean_optional_text(parsed.recurrence_text),
+        "recurrence_text": _clean_optional_text(parsed.recurrence_text),
+        # Date / Time
         "start_datetime": start_datetime,
         "end_datetime": end_datetime,
-        "location": location,
-        "venue_details": _clean_optional_text(payload.get("venue_details")),
-        "parking_notes": _clean_optional_text(payload.get("parking_notes")),
-        "food_info": _clean_optional_text(payload.get("food_info")),
-        "sponsorship_data": sponsorship_data,
-        "image_url": _clean_optional_text(payload.get("image_url")),
+        "timezone": _clean_optional_text(parsed.timezone),
+        # Location
+        "location_name": location_name,
+        "address": _clean_optional_text(parsed.address),
+        "city": _clean_optional_text(parsed.city),
+        "state": _clean_optional_text(parsed.state),
+        "postal_code": _clean_optional_text(parsed.postal_code),
+        "country": _clean_optional_text(parsed.country),
+        # Registration
+        "registration_required": _coerce_bool(parsed.registration_required),
+        "registration_status": _clean_optional_text(parsed.registration_status),
+        "registration_url": _clean_optional_text(parsed.registration_url),
+        # Contact
+        "contact_email": _clean_optional_text(parsed.contact_email),
+        "contact_phone": _clean_optional_text(parsed.contact_phone),
+        # Logistics
+        "parking_notes": _clean_optional_text(parsed.parking_notes),
+        "transportation_notes": _clean_optional_text(parsed.transportation_notes),
+        "food_info": _clean_optional_text(parsed.food_info),
+        # Pricing & Sponsorship
+        "price": price,
+        "sponsorship_tiers": sponsorship_tiers,
+        # Source metadata
         "source_url": source_url,
         "source_site": source_site,
-        "is_recurring": bool(payload.get("is_recurring", False)),
-        "recurrence_pattern": _clean_optional_text(payload.get("recurrence_pattern")),
-        "category": _clean_optional_text(payload.get("category")),
-        "special_notes": _clean_optional_text(payload.get("special_notes")),
+        "source_page_type": _clean_optional_text(parsed.source_page_type),
+        "image_url": _clean_optional_text(canonical_payload.get("image_url")),
         "scraped_at": scraped_at,
+        "source_confidence": _clean_optional_text(parsed.source_confidence),
+        # Notes
+        "notes": notes,
+        # Dedup
         "dedup_key": dedup_key,
     }
 
+
+# ---------------------------------------------------------------------------
+# Staleness
+# ---------------------------------------------------------------------------
 
 def is_event_stale(
     scraped_at: datetime,
@@ -172,6 +280,10 @@ def is_event_stale(
     return scraped_at < (now - timedelta(days=stale_after_days))
 
 
+# ---------------------------------------------------------------------------
+# Serialization
+# ---------------------------------------------------------------------------
+
 def event_to_dict(
     event: Event,
     *,
@@ -179,24 +291,52 @@ def event_to_dict(
     stale_after_days: int = 30,
 ) -> Dict[str, Any]:
     return {
+        # Identity
         "id": event.id,
         "name": event.name,
+        "subtitle": event.subtitle,
         "description": event.description,
+        # Categorization
+        "category": event.category,
+        "event_type": event.event_type,
+        # Recurrence
+        "is_recurring": event.is_recurring,
+        "recurrence_text": event.recurrence_text,
+        # Date / Time
         "start_datetime": event.start_datetime.isoformat() if event.start_datetime else None,
         "end_datetime": event.end_datetime.isoformat() if event.end_datetime else None,
-        "location": event.location,
-        "venue_details": event.venue_details,
+        "timezone": event.timezone,
+        # Location
+        "location_name": event.location_name,
+        "address": event.address,
+        "city": event.city,
+        "state": event.state,
+        "postal_code": event.postal_code,
+        "country": event.country,
+        # Registration
+        "registration_required": event.registration_required,
+        "registration_status": event.registration_status,
+        "registration_url": event.registration_url,
+        # Contact
+        "contact_email": event.contact_email,
+        "contact_phone": event.contact_phone,
+        # Logistics
         "parking_notes": event.parking_notes,
+        "transportation_notes": event.transportation_notes,
         "food_info": event.food_info,
-        "sponsorship_data": event.sponsorship_data,
-        "image_url": event.image_url,
+        # Pricing & Sponsorship
+        "price": event.price if event.price else {},
+        "sponsorship_tiers": event.sponsorship_tiers if event.sponsorship_tiers else [],
+        # Source
         "source_url": event.source_url,
         "source_site": event.source_site.value if event.source_site else None,
-        "is_recurring": event.is_recurring,
-        "recurrence_pattern": event.recurrence_pattern,
-        "category": event.category,
-        "special_notes": event.special_notes,
+        "source_page_type": event.source_page_type,
+        "image_url": event.image_url,
         "scraped_at": event.scraped_at.isoformat() if event.scraped_at else None,
+        "source_confidence": event.source_confidence,
+        # Notes
+        "notes": event.notes,
+        # Timestamps
         "created_at": event.created_at.isoformat() if event.created_at else None,
         "updated_at": event.updated_at.isoformat() if event.updated_at else None,
         "dedup_key": event.dedup_key,
@@ -214,6 +354,10 @@ def serialize_events(
 ) -> List[Dict[str, Any]]:
     return [event_to_dict(event, now_utc=now_utc, stale_after_days=stale_after_days) for event in events]
 
+
+# ---------------------------------------------------------------------------
+# Upsert
+# ---------------------------------------------------------------------------
 
 def _apply_event_updates(event_obj: Event, values: Dict[str, Any]) -> None:
     for key, value in values.items():
@@ -272,6 +416,10 @@ def upsert_events(db: Session, payloads: Iterable[Dict[str, Any]]) -> Dict[str, 
     return stats
 
 
+# ---------------------------------------------------------------------------
+# Queries
+# ---------------------------------------------------------------------------
+
 def get_event_counts(db: Session) -> Dict[str, int]:
     total = db.query(func.count(Event.id)).scalar() or 0
     recurring = db.query(func.count(Event.id)).filter(Event.is_recurring.is_(True)).scalar() or 0
@@ -318,9 +466,14 @@ def get_upcoming_events(
 
 
 def _matches_recurrence(event: Event, reference_dt: datetime) -> bool:
+    """Check whether a recurring event is active on *reference_dt*.
+
+    Supported patterns: daily, weekdays, weekends, weekly:<dayname>.
+    Unsupported patterns now log a warning (previously silently returned False).
+    """
     if not event.is_recurring:
         return False
-    pattern = _normalize_text(event.recurrence_pattern)
+    pattern = _normalize_text(event.recurrence_text)
     if not pattern:
         return True
 
@@ -334,6 +487,15 @@ def _matches_recurrence(event: Event, reference_dt: datetime) -> bool:
     if pattern.startswith("weekly:"):
         expected_day = pattern.split(":", 1)[1].strip()
         return expected_day == weekday_name
+    if pattern in ("monthly", "annually"):
+        return True
+
+    logger.warning(
+        "Unsupported recurrence_text %r for event id=%s name=%r — treating as inactive",
+        event.recurrence_text,
+        event.id,
+        event.name,
+    )
     return False
 
 
@@ -387,7 +549,7 @@ def search_events(db: Session, query: str, *, limit: int = 10, offset: int = 0) 
                 name_match,
                 Event.description.ilike(like_pattern),
                 Event.category.ilike(like_pattern),
-                Event.special_notes.ilike(like_pattern),
+                Event.notes.ilike(like_pattern),
             )
         )
         .order_by(
