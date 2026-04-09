@@ -83,6 +83,13 @@ def upgrade() -> None:
     op.alter_column("escalations", "status", new_column_name="queue_status")
     op.alter_column("escalations", "resolved_by", new_column_name="assigned_volunteer")
 
+    # 002's CHECK still applies to queue_status but only allows pending/in_progress/resolved.
+    op.drop_constraint(
+        op.f("ck_escalations_valid_escalation_status"),
+        "escalations",
+        type_="check",
+    )
+
     # --- Escalations table: Add exact schema columns ---
     op.add_column("escalations", sa.Column("success", sa.Boolean(), nullable=False, server_default="true"))
     op.add_column("escalations", sa.Column("next_state", sa.String(), nullable=False, server_default="WAITING_FOR_VOLUNTEER"))
@@ -96,6 +103,39 @@ def upgrade() -> None:
             nullable=False,
             server_default=sa.text("'[]'::jsonb"),
         ),
+    )
+    # Legacy `status` values (now `queue_status`) may not match the new CHECK. Normalize before constraints.
+    op.execute(
+        """
+        UPDATE escalations
+        SET queue_status = CASE LOWER(TRIM(COALESCE(queue_status, '')))
+            WHEN 'queued' THEN 'queued'
+            WHEN 'assigned' THEN 'assigned'
+            WHEN 'resolved' THEN 'resolved'
+            WHEN 'closed' THEN 'resolved'
+            WHEN 'complete' THEN 'resolved'
+            WHEN 'done' THEN 'resolved'
+            WHEN 'open' THEN 'queued'
+            WHEN 'pending' THEN 'queued'
+            WHEN 'in_progress' THEN 'assigned'
+            WHEN 'new' THEN 'queued'
+            WHEN '' THEN 'queued'
+            ELSE 'queued'
+        END
+        """
+    )
+    # `priority` is new with server_default; coerce any unexpected values before CHECK (defensive).
+    op.execute(
+        """
+        UPDATE escalations
+        SET priority = CASE LOWER(TRIM(COALESCE(priority, '')))
+            WHEN 'low' THEN 'low'
+            WHEN 'medium' THEN 'medium'
+            WHEN 'high' THEN 'high'
+            WHEN 'critical' THEN 'critical'
+            ELSE 'medium'
+        END
+        """
     )
     op.create_check_constraint(
         "ck_escalations_queue_status",
