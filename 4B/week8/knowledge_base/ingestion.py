@@ -1,11 +1,26 @@
+"""FAQ + static JSON events + database-backed upcoming events for KB search.
+
+`ingest_events` loads rows produced by the scraper/seed pipeline into an in-memory
+document list merged by `build_documents`, so `search_kb` can surface temple events for
+Team 4A's intent classifier without relying solely on direct HTTP calls to the events API.
+"""
+
+from __future__ import annotations
+
 import json
 import re
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import TYPE_CHECKING, Any, Dict, List
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
 
 BASE_DIR = Path(__file__).resolve().parent
 FAQS_PATH = BASE_DIR / "faqs.json"
 EVENTS_PATH = BASE_DIR / "events.json"
+
+# Populated by `ingest_events` (typically after seeding from scraped JSON).
+_ingested_event_docs: List[Dict[str, Any]] = []
 
 
 def _normalize(text: str) -> str:
@@ -41,8 +56,88 @@ def load_events() -> List[Dict[str, Any]]:
     return data.get("events", [])
 
 
+def clear_ingested_events() -> None:
+    """Remove DB-sourced event docs (e.g. before a full re-ingest)."""
+    global _ingested_event_docs
+    _ingested_event_docs = []
+
+
+def _tier_snippet(tiers: Any) -> str:
+    if not isinstance(tiers, list):
+        return ""
+    parts: List[str] = []
+    for t in tiers:
+        if not isinstance(t, dict):
+            continue
+        name = t.get("tier_name") or t.get("name") or ""
+        price = t.get("price")
+        desc = t.get("description") or ""
+        if price is not None:
+            parts.append(f"{name} {price} {desc}".strip())
+        else:
+            parts.append(f"{name} {desc}".strip())
+    return " ".join(parts)
+
+
+def _event_dict_to_kb_doc(event: Dict[str, Any]) -> Dict[str, Any]:
+    """Normalize a serialized API/storage event dict into a search_kb document."""
+    eid = event.get("id")
+    text_parts = [
+        str(event.get("name") or ""),
+        str(event.get("subtitle") or ""),
+        str(event.get("description") or ""),
+        str(event.get("category") or ""),
+        str(event.get("notes") or ""),
+        str(event.get("location_name") or ""),
+        str(event.get("city") or ""),
+        str(event.get("recurrence_text") or ""),
+        str(event.get("start_datetime") or ""),
+        str(event.get("end_datetime") or ""),
+        _tier_snippet(event.get("sponsorship_tiers")),
+    ]
+    text = " ".join(p for p in text_parts if p)
+    return {
+        "type": "event",
+        "id": f"db_event_{eid}" if eid is not None else None,
+        "tokens": _tokenize(text),
+        "payload": event,
+    }
+
+
+def ingest_events(db: "Session", *, page_size: int = 200) -> int:
+    """Load **all** upcoming events via EventService and register them for `search_kb`.
+
+    Paginates with *page_size* until no rows remain so large calendars are fully indexed.
+    Replaces any previous ingested DB events in this process for a consistent snapshot.
+    """
+    if page_size < 1:
+        raise ValueError("page_size must be >= 1")
+    try:
+        from events.services.event_service import EventService
+    except ImportError:
+        from week8.events.services.event_service import EventService
+
+    clear_ingested_events()
+    service = EventService(db, cache=None)
+    combined: List[Dict[str, Any]] = []
+    offset = 0
+    while True:
+        rows = service.get_upcoming_events(
+            limit=page_size, offset=offset, stale_after_days=30
+        )
+        if not rows:
+            break
+        combined.extend(_event_dict_to_kb_doc(ev) for ev in rows)
+        if len(rows) < page_size:
+            break
+        offset += page_size
+    global _ingested_event_docs
+    _ingested_event_docs = combined
+    return len(_ingested_event_docs)
+
+
 def build_documents() -> List[Dict[str, Any]]:
-    """Turns FAQs + Events into searchable documents."""
+    """Turns FAQs, static JSON events, and ingested DB events into searchable documents."""
     docs: List[Dict[str, Any]] = []
 
     for faq in load_faqs():
@@ -67,6 +162,7 @@ def build_documents() -> List[Dict[str, Any]]:
             }
         )
 
+    docs.extend(_ingested_event_docs)
     return docs
 
 

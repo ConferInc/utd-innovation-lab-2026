@@ -1,6 +1,10 @@
 """
 Seed the events database from a scraped JSON file.
 
+After a successful upsert, refreshes the in-process knowledge base index via
+`ingest_events` (see `knowledge_base/ingestion.py`) and returns `kb_events_ingested`
+in the stats dict.
+
 Usage:
     # Normal mode — load scraped_events.json
     python -m scripts.seed_from_scraped_json
@@ -30,9 +34,11 @@ from sqlalchemy.orm import Session
 try:
     from ..events.services.event_query_cache import invalidate_events_cache
     from ..events.storage.event_storage import upsert_events
+    from ..knowledge_base.ingestion import ingest_events
 except ImportError:
     from events.services.event_query_cache import invalidate_events_cache
     from events.storage.event_storage import upsert_events
+    from knowledge_base.ingestion import ingest_events
 
 logger = logging.getLogger(__name__)
 
@@ -61,11 +67,13 @@ def _load_input(path: Path) -> List[Dict[str, Any]]:
 
 
 def seed_from_file(db: Session, input_path: str) -> Dict[str, int]:
-    """Load events from *input_path*, upsert into DB, and invalidate cache."""
+    """Load events from *input_path*, upsert into DB, refresh KB index, invalidate cache."""
     events = _load_input(Path(input_path).resolve())
     stats = upsert_events(db, events)
     stats["input_count"] = len(events)
     invalidate_events_cache()
+    ingested = ingest_events(db)
+    stats["kb_events_ingested"] = ingested
     return stats
 
 
