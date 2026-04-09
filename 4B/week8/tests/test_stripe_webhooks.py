@@ -81,7 +81,8 @@ def test_handle_unknown_event_type():
     assert result["message"] == "Unhandled event type."
 
 
-def test_construct_webhook_event_missing_signature():
+def test_construct_webhook_event_missing_signature(monkeypatch):
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
     stripe_integration = StripeIntegration()
 
     with pytest.raises(ValueError, match="Missing Stripe-Signature header."):

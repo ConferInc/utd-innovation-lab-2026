@@ -1,11 +1,11 @@
-"""Escalation HTTP API — bot-to-human handoff tickets."""
+"""Escalation HTTP API — bot-to-human handoff tickets (Team 4A / Chanakya contract)."""
 
 from __future__ import annotations
 
 import logging
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
@@ -20,8 +20,9 @@ from ..database.state_tracking import (
     get_escalation_by_id,
     update_escalation_status,
 )
+from ..events.schemas.event_payload import EscalationResponse
 
-logger = logging.getLogger("week7.escalations")
+logger = logging.getLogger("week8.escalations")
 
 router = APIRouter(
     tags=["escalations"],
@@ -29,57 +30,44 @@ router = APIRouter(
 )
 
 
-def _dt_iso(dt: Optional[datetime]) -> Optional[str]:
-    if dt is None:
-        return None
-    # Stored as naive UTC in the ORM layer
-    return dt.isoformat() + "Z"
-
-
-def _escalation_to_dict(escalation: Escalation) -> Dict[str, Any]:
-    return {
-        "id": str(escalation.id),
-        "user_id": str(escalation.user_id),
-        "session_id": str(escalation.session_id) if escalation.session_id else None,
-        "reason": escalation.reason,
-        "context": escalation.context if escalation.context is not None else {},
-        "status": escalation.status,
-        "created_at": _dt_iso(escalation.created_at),
-        "resolved_at": _dt_iso(escalation.resolved_at),
-        "resolved_by": escalation.resolved_by,
-    }
+def _escalation_to_response(row: Escalation) -> Dict[str, Any]:
+    return EscalationResponse.model_validate(
+        {
+            "success": row.success,
+            "ticket_id": str(row.ticket_id),
+            "queue_status": row.queue_status,
+            "assigned_volunteer": row.assigned_volunteer,
+            "next_state": row.next_state,
+            "message_for_user": row.message_for_user,
+            "priority": row.priority,
+            "errors": list(row.errors or []),
+        }
+    ).model_dump(mode="json")
 
 
 class EscalationCreateBody(BaseModel):
-    user_id: uuid.UUID
-    reason: str
-    context: Dict[str, Any] = Field(default_factory=dict)
-    session_id: Optional[uuid.UUID] = None
-
-    @field_validator("reason")
-    @classmethod
-    def reason_non_empty(cls, v: str) -> str:
-        if not isinstance(v, str):
-            raise ValueError("reason must be a string")
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("reason must be non-empty")
-        return cleaned
+    priority: str = "medium"
+    queue_status: str = "queued"
+    assigned_volunteer: Optional[str] = None
+    next_state: Optional[str] = None
+    message_for_user: Optional[str] = None
+    success: bool = True
+    errors: List[str] = Field(default_factory=list)
+    requester_user_id: Optional[uuid.UUID] = None
+    requester_session_id: Optional[uuid.UUID] = None
 
 
 class EscalationResolveBody(BaseModel):
-    resolved_by: str
-    notes: Optional[str] = None
+    assigned_volunteer: Optional[str] = None
+    error_note: Optional[str] = None
 
-    @field_validator("resolved_by")
+    @field_validator("assigned_volunteer")
     @classmethod
-    def resolved_by_non_empty(cls, v: str) -> str:
-        if not isinstance(v, str):
-            raise ValueError("resolved_by must be a string")
-        cleaned = v.strip()
-        if not cleaned:
-            raise ValueError("resolved_by must be non-empty")
-        return cleaned
+    def strip_assigned(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return None
+        s = v.strip()
+        return s or None
 
 
 @router.post("", status_code=201)
@@ -87,130 +75,114 @@ def create_escalation_ticket(
     body: EscalationCreateBody,
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Create an escalation ticket; optional session_id must belong to user_id."""
+    """Create a canonical escalation ticket."""
     try:
         escalation = create_escalation(
             db=db,
-            user_id=body.user_id,
-            reason=body.reason,
-            context=body.context,
-            session_id=body.session_id,
+            priority=body.priority,
+            queue_status=body.queue_status,
+            assigned_volunteer=body.assigned_volunteer,
+            next_state=body.next_state,
+            message_for_user=body.message_for_user,
+            success=body.success,
+            errors=body.errors,
+            requester_user_id=body.requester_user_id,
+            requester_session_id=body.requester_session_id,
         )
     except ValueError as exc:
-        logger.warning(
-            "escalation_create_rejected | user_id=%s | session_id=%s | detail=%s",
-            body.user_id,
-            body.session_id,
-            str(exc),
-        )
+        logger.warning("escalation_create_rejected | detail=%s", exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        logger.exception(
-            "escalation_create_failed | user_id=%s | session_id=%s",
-            body.user_id,
-            body.session_id,
-        )
+        logger.exception("escalation_create_failed")
         raise
 
-    if body.session_id is not None:
+    if body.requester_session_id is not None:
         try:
             update_session_context(
                 db=db,
-                session_id=body.session_id,
+                session_id=body.requester_session_id,
                 context_updates={
-                    "last_escalation_id": str(escalation.id),
-                    "last_escalation_status": escalation.status,
+                    "last_escalation_ticket_id": str(escalation.ticket_id),
+                    "last_escalation_queue_status": escalation.queue_status,
                     "last_escalation_at": datetime.now(timezone.utc).isoformat(),
                 },
             )
         except Exception as session_err:
             logger.warning(
-                "escalation_session_context_failed | escalation_id=%s | session_id=%s | err=%s",
-                escalation.id,
-                body.session_id,
+                "escalation_session_context_failed | ticket_id=%s | session_id=%s | err=%s",
+                escalation.ticket_id,
+                body.requester_session_id,
                 session_err,
                 exc_info=True,
             )
 
     logger.info(
-        "escalation_created | escalation_id=%s | user_id=%s | session_id=%s | status=%s",
-        escalation.id,
-        escalation.user_id,
-        escalation.session_id,
-        escalation.status,
+        "escalation_created | ticket_id=%s | queue_status=%s | priority=%s",
+        escalation.ticket_id,
+        escalation.queue_status,
+        escalation.priority,
     )
-    return {
-        "id": str(escalation.id),
-        "status": escalation.status,
-        "user_id": str(escalation.user_id),
-        "session_id": str(escalation.session_id) if escalation.session_id else None,
-        "created_at": _dt_iso(escalation.created_at),
-    }
+    return _escalation_to_response(escalation)
 
 
-@router.get("/{escalation_id}")
+@router.get("/{ticket_id}")
 def get_escalation(
-    escalation_id: uuid.UUID,
+    ticket_id: uuid.UUID,
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Return a single escalation by id."""
-    escalation = get_escalation_by_id(db=db, escalation_id=escalation_id)
+    """Return a single escalation by ticket id."""
+    escalation = get_escalation_by_id(db=db, escalation_id=ticket_id)
     if escalation is None:
-        logger.warning("escalation_not_found | escalation_id=%s", escalation_id)
+        logger.warning("escalation_not_found | ticket_id=%s", ticket_id)
         raise HTTPException(status_code=404, detail="Escalation not found")
     logger.info(
-        "escalation_fetched | escalation_id=%s | user_id=%s | status=%s",
-        escalation.id,
-        escalation.user_id,
-        escalation.status,
+        "escalation_fetched | ticket_id=%s | queue_status=%s",
+        escalation.ticket_id,
+        escalation.queue_status,
     )
-    return _escalation_to_dict(escalation)
+    return _escalation_to_response(escalation)
 
 
-@router.put("/{escalation_id}/resolve")
+@router.put("/{ticket_id}/resolve")
 def resolve_escalation(
-    escalation_id: uuid.UUID,
+    ticket_id: uuid.UUID,
     body: EscalationResolveBody,
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
-    """Mark an escalation resolved with optional notes; idempotent if already resolved."""
-    escalation = get_escalation_by_id(db=db, escalation_id=escalation_id)
+    """Set queue_status to resolved; idempotent if already resolved."""
+    escalation = get_escalation_by_id(db=db, escalation_id=ticket_id)
     if escalation is None:
-        logger.warning("escalation_resolve_not_found | escalation_id=%s", escalation_id)
+        logger.warning("escalation_resolve_not_found | ticket_id=%s", ticket_id)
         raise HTTPException(status_code=404, detail="Escalation not found")
 
-    if escalation.status == "resolved":
+    if escalation.queue_status == "resolved":
         logger.info(
-            "escalation_resolve_idempotent | escalation_id=%s | user_id=%s",
-            escalation.id,
-            escalation.user_id,
+            "escalation_resolve_idempotent | ticket_id=%s",
+            escalation.ticket_id,
         )
-        return _escalation_to_dict(escalation)
+        return _escalation_to_response(escalation)
 
     try:
         updated = update_escalation_status(
             db=db,
-            escalation_id=escalation_id,
-            new_status="resolved",
-            resolved_by=body.resolved_by,
-            note=body.notes,
+            ticket_id=ticket_id,
+            queue_status="resolved",
+            assigned_volunteer=body.assigned_volunteer,
+            error_note=body.error_note,
         )
     except ValueError as exc:
-        logger.warning(
-            "escalation_resolve_invalid | escalation_id=%s | detail=%s",
-            escalation_id,
-            str(exc),
-        )
+        logger.warning("escalation_resolve_invalid | ticket_id=%s | detail=%s", ticket_id, exc)
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception:
-        logger.exception("escalation_resolve_failed | escalation_id=%s", escalation_id)
+        logger.exception("escalation_resolve_failed | ticket_id=%s", ticket_id)
         raise
 
-    assert updated is not None
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Escalation not found")
+
     logger.info(
-        "escalation_resolved | escalation_id=%s | user_id=%s | resolved_by=%s",
-        updated.id,
-        updated.user_id,
-        updated.resolved_by,
+        "escalation_resolved | ticket_id=%s | assigned_volunteer=%s",
+        updated.ticket_id,
+        updated.assigned_volunteer,
     )
-    return _escalation_to_dict(updated)
+    return _escalation_to_response(updated)

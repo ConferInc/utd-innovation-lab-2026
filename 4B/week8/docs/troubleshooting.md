@@ -14,11 +14,11 @@ This document serves as a guide for issues that might occur when trying to run o
 - Make sure `DATABASE_URL` is set in the environment 
 - Install the dependencies using
 ```bash
-pip install -r 4B/week7/requirements.txt
+pip install -r 4B/week8/requirements.txt
 ```
 - Start the app using 
 ```bash
-uvicorn 4B.week7.main:app --host 0.0.0.0 --port 8000 --reload
+uvicorn 4B.week8.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 - Confirm the Python version matches the deployment configuration
 
@@ -157,8 +157,8 @@ The codebase currently uses more than one calendar credential variable name in d
 
 ### Expected configuration
 ```YAML 
-buildCommand: pip install --upgrade pip && pip install -r 4B/week7/requirements.txt
-startCommand: uvicorn 4B.week7.main:app --host 0.0.0.0 --port $PORT
+buildCommand: pip install --upgrade pip && pip install -r 4B/week8/requirements.txt
+startCommand: uvicorn 4B.week8.main:app --host 0.0.0.0 --port $PORT
 ``` 
 ## 10. Import or Module Errors
 ### Symptoms 
@@ -175,7 +175,7 @@ startCommand: uvicorn 4B.week7.main:app --host 0.0.0.0 --port $PORT
 - Make sure dependencies are installed
 - Confirm the module path matches:
 ```bash
-uvicorn 4B.week7.main:app --reload
+uvicorn 4B.week8.main:app --reload
 ```
 - Check that the package folders include `__init__.py`
 

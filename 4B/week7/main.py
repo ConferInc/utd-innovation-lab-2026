@@ -68,7 +68,7 @@ app.include_router(escalations_router, prefix="/escalations")
 
 app.include_router(stripe_webhook_router)
 
-app.include_router(events_router, prefix="/events")
+app.include_router(events_router, prefix="/api/v2/events")
 
 
 

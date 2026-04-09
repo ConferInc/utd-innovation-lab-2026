@@ -189,12 +189,12 @@ flowchart TD
 ### Build Command
 ```bash
 pip install --upgrade pip
-pip install -r 4B/week7/requirements.txt
+pip install -r 4B/week8/requirements.txt
 ```
 
 ### Start Command
 ```bash
-uvicorn 4B.week7.main:app --host 0.0.0.0 --port $PORT
+uvicorn 4B.week8.main:app --host 0.0.0.0 --port $PORT
 ```
 
 ## TwilioWebhook Setup
@@ -218,7 +218,15 @@ https://<your-service>.onrender.com/webhook/whatsapp
 - `POST /create-payment` → Stripe payment intent
 - `GET /maps` → Google Maps test
 - `GET /calendar` → Google Calendar test
-- `/escalations` → escalation endpoint
+- `/escalations` → escalation tickets (Bearer token; see [API security](docs/api-security.md) and [Escalations API](escalations-api.md))
+
+### Events (Team 4A contract — public read-only)
+
+- `GET /api/v2/events` — upcoming events (pagination: `limit`, `offset`)
+- `GET /api/v2/events/today`
+- `GET /api/v2/events/recurring`
+- `GET /api/v2/events/search?q=...`
+- `GET /api/v2/events/{event_id}`
 
 ---
 

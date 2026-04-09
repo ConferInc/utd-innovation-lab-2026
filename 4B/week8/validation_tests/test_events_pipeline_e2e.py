@@ -1,7 +1,7 @@
 """
 End-to-end tests (Week 7).
 
-Tier A: ``seed_from_file`` on ``fixtures/scraped_min.json`` → HTTP ``/events`` and ``/search``.
+Tier A: ``seed_from_file`` on ``fixtures/scraped_min.json`` → HTTP ``/api/v2/events`` and ``/search``.
 
 Tier B: temple + JKYog scrapers with shared mock HTTP (fixture HTML) → bundle JSON → ``seed_from_file`` → HTTP.
 
@@ -125,7 +125,7 @@ def test_seed_from_file_then_list_events_over_http() -> None:
         assert stats["input_count"] >= 1
 
     app = FastAPI()
-    app.include_router(events_router, prefix="/events")
+    app.include_router(events_router, prefix="/api/v2/events")
 
     def _db_override():
         s = SessionMaker()
@@ -137,7 +137,7 @@ def test_seed_from_file_then_list_events_over_http() -> None:
     app.dependency_overrides[get_db] = _db_override
 
     with TestClient(app) as client:
-        r = client.get("/events", params={"limit": 20, "offset": 0})
+        r = client.get("/api/v2/events", params={"limit": 20, "offset": 0})
         assert r.status_code == 200
         names = {e["name"] for e in r.json()["events"]}
         assert "Integration Hanuman" in names
@@ -160,7 +160,7 @@ def test_seed_then_search_http() -> None:
         seed_from_file(db, json_path)
 
     app = FastAPI()
-    app.include_router(events_router, prefix="/events")
+    app.include_router(events_router, prefix="/api/v2/events")
 
     def _db_override():
         s = SessionMaker()
@@ -172,7 +172,7 @@ def test_seed_then_search_http() -> None:
     app.dependency_overrides[get_db] = _db_override
 
     with TestClient(app) as client:
-        r = client.get("/events/search", params={"q": "Integration Hanuman", "limit": 10})
+        r = client.get("/api/v2/events/search", params={"q": "Integration Hanuman", "limit": 10})
         assert r.status_code == 200
         assert any("Integration Hanuman" == ev["name"] for ev in r.json()["events"])
 
@@ -180,7 +180,7 @@ def test_seed_then_search_http() -> None:
 @pytest.mark.integration
 def test_tier_b_mocked_scrape_then_seed_then_list_over_http() -> None:
     """
-    Tier B: fixture HTML via both scrapers → bundle JSON → ``seed_from_file`` → GET /events.
+    Tier B: fixture HTML via both scrapers → bundle JSON → ``seed_from_file`` → GET /api/v2/events.
     """
     from events.scrapers.jkyog import DEFAULT_JKYOG_CALENDAR_URL
     from events.scrapers.radhakrishnatemple import DEFAULT_TEMPLE_HOMEPAGE_URL
@@ -220,7 +220,7 @@ def test_tier_b_mocked_scrape_then_seed_then_list_over_http() -> None:
             assert stats.get("inserted", 0) + stats.get("updated", 0) >= 1
 
         app = FastAPI()
-        app.include_router(events_router, prefix="/events")
+        app.include_router(events_router, prefix="/api/v2/events")
 
         def _db_override():
             s = SessionMaker()
@@ -232,7 +232,7 @@ def test_tier_b_mocked_scrape_then_seed_then_list_over_http() -> None:
         app.dependency_overrides[get_db] = _db_override
 
         with TestClient(app) as client:
-            r = client.get("/events", params={"limit": 50, "offset": 0})
+            r = client.get("/api/v2/events", params={"limit": 50, "offset": 0})
             assert r.status_code == 200
             names = {e["name"] for e in r.json()["events"]}
             assert len(names) >= 1

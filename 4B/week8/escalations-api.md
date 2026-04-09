@@ -1,169 +1,163 @@
-# Escalations API — Team 4B Week 6
+# Escalations API — Team 4B Week 8 (Chanakya contract)
 
-HTTP endpoints for **bot-to-human escalation** tickets. The service stores rows in the `escalations` table (see Alembic migration `002_add_escalations_table.py` and `database/schema.py`).
+HTTP endpoints for **bot-to-human escalation** tickets. Rows live in the `escalations` table ([`database/schema.py`](database/schema.py): `ticket_id`, `success`, `queue_status`, `assigned_volunteer`, `next_state`, `message_for_user`, `priority`, `errors`, optional `requester_user_id` / `requester_session_id`).
 
-Interactive OpenAPI documentation is available at **`/docs`** when the FastAPI app is running.
+**Authentication:** Every route requires:
+
+`Authorization: Bearer <ESCALATIONS_API_TOKEN>`
+
+Without a valid token the API returns **401**. (Team 4A: events under `/api/v2/events` stay public; escalations do not.)
+
+The response body for create/get/resolve matches the Pydantic model **`EscalationResponse`** in [`events/schemas/event_payload.py`](events/schemas/event_payload.py).
+
+Interactive OpenAPI: **`/docs`** when the app is running.
 
 ---
 
 ## Base URL
 
-Use your deployed host, for example:
+- Deployed: `https://<your-service>.onrender.com`
+- Local: `http://127.0.0.1:8000`
 
-`https://<your-service>.onrender.com`
+Export a token for curl examples:
 
-Local:
-
-`http://127.0.0.1:8000`
-
-All paths below are relative to that base.
+```bash
+export ESCALATIONS_API_TOKEN="your-secret-token"
+```
 
 ---
 
 ## POST /escalations
 
-Create a new escalation ticket.
+Create a ticket. Returns **`201 Created`** with an **EscalationResponse** JSON object.
 
 ### Request body (JSON)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `user_id` | string (UUID) | Yes | Existing user id in `users` table |
-| `reason` | string | Yes | Non-empty after trim |
-| `context` | object | No | Defaults to `{}`; arbitrary JSON for bot/agent context |
-| `session_id` | string (UUID) or null | No | If set, must be a `session_state.id` that belongs to `user_id` |
+| `priority` | string | No | `low` \| `medium` \| `high` \| `critical` (default `medium`) |
+| `queue_status` | string | No | `queued` \| `assigned` \| `resolved` (default `queued`) |
+| `assigned_volunteer` | string or null | No | Volunteer identifier when known |
+| `next_state` | string or null | No | If omitted, derived from `queue_status` |
+| `message_for_user` | string or null | No | User-facing message (default server string if empty) |
+| `success` | boolean | No | Default `true` |
+| `errors` | string[] | No | Initial error strings (default `[]`) |
+| `requester_user_id` | UUID or null | No | Optional link to `users.id` |
+| `requester_session_id` | UUID or null | No | Optional `session_state.id`; must exist; if `requester_user_id` is set it must match the session’s user; if only session is set, `requester_user_id` on the row is taken from the session |
 
-### Success — `201 Created`
+### Success — `201 Created` (EscalationResponse)
 
 ```json
 {
-  "id": "<uuid>",
-  "status": "pending",
-  "user_id": "<uuid>",
-  "session_id": "<uuid or null>",
-  "created_at": "2026-03-23T12:00:00Z"
+  "success": true,
+  "ticket_id": "<uuid>",
+  "queue_status": "queued",
+  "assigned_volunteer": null,
+  "next_state": "WAITING_FOR_VOLUNTEER",
+  "message_for_user": "I'm connecting you to a human volunteer now. Please hold on.",
+  "priority": "medium",
+  "errors": []
 }
 ```
 
-### Errors
-
-| Status | When |
-|--------|------|
-| `422` | Invalid JSON, missing required fields, empty `reason`, invalid UUID |
-| `400` | Unknown `user_id`, or `session_id` missing / not owned by `user_id` (message in `detail`) |
-
 ### Session integration
 
-If `session_id` is provided and valid, the API updates that session’s JSON `state` with:
+If `requester_session_id` is valid, the API merges into that session’s `state`:
 
-- `last_escalation_id`
-- `last_escalation_status`
-- `last_escalation_at` (ISO 8601 timestamp)
+- `last_escalation_ticket_id`
+- `last_escalation_queue_status`
+- `last_escalation_at` (ISO 8601)
 
 ### Example (curl)
 
 ```bash
 curl -s -X POST "http://127.0.0.1:8000/escalations" \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${ESCALATIONS_API_TOKEN}" \
   -d '{
-    "user_id": "550e8400-e29b-41d4-a716-446655440000",
-    "reason": "User requested volunteer",
-    "context": {"intent": "human_help", "confidence": 0.4},
-    "session_id": null
+    "priority": "medium",
+    "queue_status": "queued",
+    "message_for_user": "Connecting you to a volunteer.",
+    "errors": []
   }'
 ```
-
----
-
-## GET /escalations/{id}
-
-Fetch one escalation by primary key.
-
-### Path parameter
-
-- `id` — UUID of the escalation
-
-### Success — `200 OK`
-
-```json
-{
-  "id": "<uuid>",
-  "user_id": "<uuid>",
-  "session_id": "<uuid or null>",
-  "reason": "…",
-  "context": {},
-  "status": "pending | in_progress | resolved",
-  "created_at": "2026-03-23T12:00:00Z",
-  "resolved_at": "<iso or null>",
-  "resolved_by": "<string or null>"
-}
-```
-
-Date-time fields use ISO 8601 with a `Z` suffix (stored as UTC in the database).
 
 ### Errors
 
 | Status | When |
 |--------|------|
-| `422` | `id` is not a valid UUID |
-| `404` | No row with that id |
+| `401` | Missing/wrong Bearer token |
+| `422` | Validation error (invalid enum, bad UUID, etc.) |
+| `400` | Invalid `queue_status`/`priority`, or session/user mismatch |
+
+---
+
+## GET /escalations/{ticket_id}
+
+Fetch one ticket by **`ticket_id`** (primary key UUID).
+
+### Success — `200 OK`
+
+Same **EscalationResponse** shape as POST.
 
 ### Example (curl)
 
 ```bash
-curl -s "http://127.0.0.1:8000/escalations/550e8400-e29b-41d4-a716-446655440001"
+TICKET="550e8400-e29b-41d4-a716-446655440000"
+curl -s "http://127.0.0.1:8000/escalations/${TICKET}" \
+  -H "Authorization: Bearer ${ESCALATIONS_API_TOKEN}"
 ```
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `401` | Missing/wrong Bearer |
+| `404` | Unknown `ticket_id` |
 
 ---
 
-## PUT /escalations/{id}/resolve
+## PUT /escalations/{ticket_id}/resolve
 
-Mark an escalation as **resolved** and record who resolved it. Optional **notes** are appended to `context.status_notes` (see `update_escalation_status` in `database/state_tracking.py`).
-
-### Path parameter
-
-- `id` — UUID of the escalation
+Sets **`queue_status`** to **`resolved`** and updates `next_state` accordingly. **Idempotent:** if already `resolved`, returns the current row.
 
 ### Request body (JSON)
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `resolved_by` | string | Yes | Non-empty after trim (e.g. volunteer id or email) |
-| `notes` | string or null | No | If non-empty after trim, stored in context |
+| `assigned_volunteer` | string or null | No | Set when resolving with an assignee |
+| `error_note` | string or null | No | If non-empty, appended to the ticket’s `errors` list |
 
 ### Success — `200 OK`
 
-Same shape as **GET** response for the updated row.
+**EscalationResponse** for the updated row.
 
-**Idempotent:** If the escalation is already `resolved`, the handler returns the current row without changing timestamps again.
+### Example (curl)
+
+```bash
+TICKET="550e8400-e29b-41d4-a716-446655440000"
+curl -s -X PUT "http://127.0.0.1:8000/escalations/${TICKET}/resolve" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${ESCALATIONS_API_TOKEN}" \
+  -d '{"assigned_volunteer": "volunteer_jane@example.com", "error_note": ""}'
+```
 
 ### Errors
 
 | Status | When |
 |--------|------|
-| `422` | Invalid UUID, missing/empty `resolved_by` |
-| `404` | Escalation not found |
-| `400` | Rare: invalid internal status transition (`detail` from server) |
-
-### Example (curl)
-
-```bash
-curl -s -X PUT "http://127.0.0.1:8000/escalations/550e8400-e29b-41d4-a716-446655440001/resolve" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "resolved_by": "volunteer_jane@example.com",
-    "notes": "Called user; issue closed."
-  }'
-```
+| `401` | Missing/wrong Bearer |
+| `404` | Unknown `ticket_id` |
+| `400` | Invalid transition / validation from `state_tracking` |
 
 ---
 
-## Rules and notes
+## Related docs
 
-1. **`session_id` and `user_id`:** When `session_id` is sent on create, it must reference an existing session row whose `user_id` matches the request’s `user_id`. Otherwise the API returns **400**.
-2. **OpenAPI:** Use **`/docs`** to try requests and see exact schemas.
-3. **Related:** Database health including escalations table probe: **GET `/health/db`**.
+- [docs/api-security.md](docs/api-security.md) — which routes need auth
+- [docs/render-deployment.md](docs/render-deployment.md) — set `ESCALATIONS_API_TOKEN` on Render
+- **GET `/health/db`** — database health
 
 ---
 
-*API implemented for Week 6 — Rohan Kothapalli (escalation endpoints); Chakradhar Gummakonda (schema / DB layer).*
+*Week 8 — aligned with Team 4A escalation flow fields; implemented in [`api/escalations.py`](api/escalations.py) and [`database/state_tracking.py`](database/state_tracking.py).*

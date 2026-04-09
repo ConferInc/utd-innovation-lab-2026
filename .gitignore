@@ -7,7 +7,9 @@ __pycache__/
 *.pyc
 
 # Run-output artifacts (Week 7+) — should not be in version control
+.coverage
 stress_test_results_*
+scraped_events.json
 local_dev.db
 *.db
 .env.local

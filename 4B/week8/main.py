@@ -1,5 +1,5 @@
 """
-Unified FastAPI entrypoint for Week 7.
+Unified FastAPI entrypoint for Week 8.
 
 Implements the orchestration pipeline for the JKYog WhatsApp bot:
 - Initializes the database
@@ -39,7 +39,7 @@ logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
-logger = logging.getLogger("week7.main")
+logger = logging.getLogger("week8.main")
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -68,7 +68,7 @@ app.include_router(escalations_router, prefix="/escalations")
 
 app.include_router(stripe_webhook_router)
 
-app.include_router(events_router, prefix="/events")
+app.include_router(events_router, prefix="/api/v2/events")
 
 
 
@@ -434,4 +434,4 @@ async def whatsapp_webhook(
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run("4B.week7.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("4B.week8.main:app", host="0.0.0.0", port=8000, reload=True)

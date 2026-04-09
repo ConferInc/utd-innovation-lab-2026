@@ -3,13 +3,13 @@
 This document serves as a guide on how to deploy the JKYog WhatsApp Bot on Render. 
 
 ## 1. Overview 
-The bot for week 7 is currently deployed as a Python web service on Render. The appllication uses FastAPI as the backend framework and Univcorn as the ASGI server. 
+The Week 8 bot is deployed as a Python web service on Render. The application uses FastAPI as the backend framework and Uvicorn as the ASGI server. 
 
 The deployment uses the following tools and services:
 - Render Web Service 
 - Python 3.11
-- `4B/week7/requirements.txt` for dependencies 
-- `4B.week7.main:app` as the application entrypoint
+- `4B/week8/requirements.txt` for dependencies 
+- `4B.week8.main:app` as the application entrypoint
 
 ## 2. Render Configuration
 
@@ -18,14 +18,14 @@ This project includes a `render.yaml` file with the setup below:
 ```yaml
 services:
   - type: web
-    name: jkyog-whatsapp-bot-week7
+    name: jkyog-whatsapp-bot-week8
     env: python
     plan: free
     buildCommand: |
       pip install --upgrade pip
-      pip install -r 4B/week7/requirements.txt
+      pip install -r 4B/week8/requirements.txt
     startCommand: |
-      uvicorn 4B.week7.main:app --host 0.0.0.0 --port $PORT
+      uvicorn 4B.week8.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.0
@@ -51,7 +51,7 @@ To create the Web service follow the steps below:
 
 **Step 1: Push the repository to Github**
 
-Make sure the latest week 7 code is pushed to GitHub in the correct branch. 
+Make sure the latest Week 8 code is pushed to GitHub in the correct branch. 
 
 **Step 2: Log in to Render**
 
@@ -66,15 +66,15 @@ Authorize Render to access the repository and select the project repository.
 Render should use the configuration from `render.yaml` is detected. If the values are entered manually, use the same. bild and start commands shown below. 
 
 ## 5. Build and Start Commands 
-The following commands ensure Render installs the right dependencies and starts the Week 7 FastAPI application.
+The following commands ensure Render installs the right dependencies and starts the Week 8 FastAPI application.
 ### Build Command
 ```bash
 pip install --upgrade pip
-pip install -r 4B/week7/requirements.txt
+pip install -r 4B/week8/requirements.txt
 ```
 ### Start Command
 ```bash
-uvicorn 4B.week7.main:app --host 0.0.0.0 --port $PORT
+uvicorn 4B.week8.main:app --host 0.0.0.0 --port $PORT
 ```
 
 ## 6. Required Environment Variables
@@ -104,6 +104,7 @@ Set the following variables in the Render dashboard under the **Environment** ta
 | `STRIPE_DALLAS_LINK` | Dallas temple donation link |
 | `STRIPE_IRVING_LINK` | Irving temple donation link |
 | `STRIPE_HOUSTON_LINK` | Houston temple donation link |
+| `ESCALATIONS_API_TOKEN` | Shared secret for `Authorization: Bearer …` on `/escalations` routes |
 
 ## 7. Database Setup
 The application initializes the databas during the startup. 
@@ -168,6 +169,16 @@ GET /health/db
 ```
 Use the above to confirm database connectivity. 
 
+### Events API (Team 4A)
+After seeding the database (see [environment-variables.md](environment-variables.md) and seed scripts under `scripts/`), verify:
+```
+GET /api/v2/events
+GET /api/v2/events/today
+GET /api/v2/events/recurring
+GET /api/v2/events/search?q=test
+GET /api/v2/events/1
+```
+
 ### Additional Test Endpoints 
 Below are some additional points that help verify integrations.
 ```
@@ -187,7 +198,7 @@ POST /create-payment
 **How to Resolve it**
 - Verify environment variables
 - Confirm `requirements.txt` path is correct
-- Confirm start command is `unicorn 4B.week7.main:app --host 0.0.0.0 --port $PORT`
+- Confirm start command is `uvicorn 4B.week8.main:app --host 0.0.0.0 --port $PORT`
 
 ### Issue 2: Database Health Check Fails
 **Possible Causes**

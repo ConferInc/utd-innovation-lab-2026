@@ -208,8 +208,16 @@ def create_escalation(
     message_for_user: Optional[str] = None,
     success: bool = True,
     errors: Optional[List[str]] = None,
+    requester_user_id: Optional[uuid.UUID] = None,
+    requester_session_id: Optional[uuid.UUID] = None,
 ) -> Escalation:
-    """Create a new escalation ticket aligned to the locked schema fields."""
+    """Create a new escalation ticket aligned to the locked schema fields.
+
+    If ``requester_session_id`` is set, the session must exist. When
+    ``requester_user_id`` is also set, it must match the session's user.
+    If only ``requester_session_id`` is set, ``requester_user_id`` on the row
+    is taken from the session.
+    """
     cleaned_priority = priority.strip().lower() if isinstance(priority, str) else ""
     if cleaned_priority not in VALID_ESCALATION_PRIORITIES:
         raise ValueError(
@@ -238,6 +246,18 @@ def create_escalation(
                 if text:
                     cleaned_errors.append(text)
 
+    resolved_requester_user_id = requester_user_id
+    if requester_session_id is not None:
+        session_row = (
+            db.query(SessionState).filter(SessionState.id == requester_session_id).first()
+        )
+        if session_row is None:
+            raise ValueError("requester_session_id does not match an existing session")
+        if resolved_requester_user_id is not None and session_row.user_id != resolved_requester_user_id:
+            raise ValueError("requester_session_id does not belong to requester_user_id")
+        if resolved_requester_user_id is None:
+            resolved_requester_user_id = session_row.user_id
+
     escalation = Escalation(
         success=bool(success),
         queue_status=cleaned_status,
@@ -246,6 +266,8 @@ def create_escalation(
         message_for_user=cleaned_message,
         priority=cleaned_priority,
         errors=cleaned_errors,
+        requester_user_id=resolved_requester_user_id,
+        requester_session_id=requester_session_id,
     )
     db.add(escalation)
     db.commit()
