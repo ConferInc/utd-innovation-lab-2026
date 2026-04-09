@@ -25,9 +25,20 @@ from sqlalchemy import (
     UniqueConstraint,
     types,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import relationship, validates
 
 from .models import Base, IS_SQLITE
+
+try:
+    from events.schemas.recurrence import (
+        recurrence_check_clause_for_column,
+        validate_recurrence_value,
+    )
+except ImportError:
+    from ..events.schemas.recurrence import (
+        recurrence_check_clause_for_column,
+        validate_recurrence_value,
+    )
 
 # ---------------------------------------------------------------------------
 # Portable column types — work on both PostgreSQL and SQLite
@@ -193,6 +204,14 @@ class Event(Base):
     __table_args__ = (
         UniqueConstraint("dedup_key", name="uq_events_dedup_key"),
         UniqueConstraint("source_site", "source_url", name="uq_events_source_site_source_url"),
+        CheckConstraint(
+            recurrence_check_clause_for_column("recurrence_pattern"),
+            name="ck_events_recurrence_pattern",
+        ),
+        CheckConstraint(
+            recurrence_check_clause_for_column("recurrence_text"),
+            name="ck_events_recurrence_text",
+        ),
     )
 
     # --- Identity ---
@@ -207,8 +226,8 @@ class Event(Base):
 
     # --- Recurrence ---
     is_recurring = Column(Boolean, default=False, nullable=False, index=True)
-    recurrence_pattern = Column(Text, nullable=True)   # machine-readable: daily, weekdays, weekly:sunday, etc.
-    recurrence_text = Column(Text, nullable=True)       # human-readable: "Every Sunday at 10 AM"
+    recurrence_pattern = Column(Text, nullable=True)   # machine-readable (duplicate of recurrence_text for legacy/DB)
+    recurrence_text = Column(Text, nullable=True)       # machine-readable: daily, weekdays, weekly:sunday, etc.
 
     # --- Date / Time ---
     start_datetime = Column(DateTime, nullable=False, index=True)
@@ -267,3 +286,11 @@ class Event(Base):
 
     # --- Deduplication ---
     dedup_key = Column(String(64), nullable=False, index=True)
+
+    @validates("recurrence_pattern", "recurrence_text")
+    def _validate_recurrence_columns(self, key: str, value: object) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            return validate_recurrence_value(value)
+        return validate_recurrence_value(str(value))

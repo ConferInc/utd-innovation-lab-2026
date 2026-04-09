@@ -4,7 +4,9 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
+
+from .recurrence import ALLOWED_RECURRENCE_VALUES, validate_recurrence_value
 
 class SponsorshipTier(BaseModel):
     tier_name: str
@@ -50,20 +52,6 @@ SourceConfidence = Literal["high", "medium", "low"]
 Priority = Literal["low", "medium", "high", "critical"]
 QueueStatus = Literal["queued", "assigned", "resolved"]
 NextState = Literal["WAITING_FOR_VOLUNTEER", "ACTIVE_HANDOFF", "RESOLVED"]
-RecurrenceValue = Literal[
-    "daily",
-    "weekdays",
-    "weekends",
-    "weekly:monday",
-    "weekly:tuesday",
-    "weekly:wednesday",
-    "weekly:thursday",
-    "weekly:friday",
-    "weekly:saturday",
-    "weekly:sunday",
-    "monthly",
-    "annually",
-]
 
 
 class EventPayload(BaseModel):
@@ -73,7 +61,10 @@ class EventPayload(BaseModel):
     category: Optional[Category] = None
     event_type: Optional[EventType] = None
     is_recurring: bool = False
-    recurrence_text: Optional[RecurrenceValue] = None
+    recurrence_text: Optional[str] = Field(
+        default=None,
+        description=f"Machine-readable recurrence; allowed: {', '.join(ALLOWED_RECURRENCE_VALUES)}",
+    )
     start_datetime: datetime
     end_datetime: Optional[datetime] = None
     timezone: Optional[str] = None
@@ -148,6 +139,15 @@ class EventPayload(BaseModel):
             data["recurrence_text"] = data.get("recurrence_pattern")
         return data
 
+    @field_validator("recurrence_text", mode="before")
+    @classmethod
+    def _validate_recurrence_text(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, str) and not value.strip():
+            return None
+        return validate_recurrence_value(value if isinstance(value, str) else str(value))
+
     @model_validator(mode="after")
     def _validate_contract(self) -> EventPayload:
         self.name = self.name.strip()
@@ -178,7 +178,7 @@ class EventPayload(BaseModel):
         if self.is_recurring and self.recurrence_text is None:
             raise ValueError(
                 "recurrence_text is required when is_recurring is true. "
-                "Allowed values: daily, weekdays, weekends, weekly:<day>, monthly, annually."
+                f"Allowed values: {', '.join(ALLOWED_RECURRENCE_VALUES)}"
             )
         if not self.is_recurring:
             self.recurrence_text = None

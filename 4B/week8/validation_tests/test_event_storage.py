@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from pydantic import ValidationError
 
 from events.storage.event_storage import build_dedup_key, is_event_stale, normalize_event_payload
 
@@ -85,6 +86,49 @@ def test_normalize_event_payload_rejects_invalid_source_site() -> None:
     }
 
     with pytest.raises(ValueError):
+        normalize_event_payload(payload)
+
+
+def test_normalize_event_payload_normalizes_weekly_recurrence_casing() -> None:
+    payload = {
+        "name": "Sunday Program",
+        "source_url": "https://example.org/sunday",
+        "source_site": "jkyog",
+        "start_datetime": "2026-04-04T10:00:00Z",
+        "scraped_at": "2026-03-30T12:00:00Z",
+        "is_recurring": True,
+        "recurrence_text": "weekly:SUNDAY",
+    }
+    normalized = normalize_event_payload(payload)
+    assert normalized["recurrence_text"] == "weekly:sunday"
+    assert normalized["recurrence_pattern"] == "weekly:sunday"
+
+
+def test_normalize_event_payload_rejects_invalid_recurrence_text() -> None:
+    payload = {
+        "name": "Bad Pattern",
+        "source_url": "https://example.org/bad",
+        "source_site": "jkyog",
+        "start_datetime": "2026-04-04T10:00:00Z",
+        "scraped_at": "2026-03-30T12:00:00Z",
+        "is_recurring": True,
+        "recurrence_text": "biweekly",
+    }
+    with pytest.raises(ValidationError):
+        normalize_event_payload(payload)
+
+
+def test_normalize_event_payload_rejects_invalid_recurrence_pattern_alias() -> None:
+    payload = {
+        "name": "Bad Pattern",
+        "source_url": "https://example.org/bad",
+        "source_site": "jkyog",
+        "start_datetime": "2026-04-04T10:00:00Z",
+        "scraped_at": "2026-03-30T12:00:00Z",
+        "is_recurring": True,
+        "recurrence_pattern": "monthly:15",
+    }
+    with pytest.raises(ValidationError):
         normalize_event_payload(payload)
 
 

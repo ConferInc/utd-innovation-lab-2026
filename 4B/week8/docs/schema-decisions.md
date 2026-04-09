@@ -38,9 +38,14 @@ Legacy sponsorship tier keys are normalized as:
 
 ## Validation assumptions
 
-- `recurrence_text` is treated as the machine-readable recurrence value for recurring events and must be one of the allowed values (`daily`, `weekdays`, `weekends`, `weekly:<day>`, `monthly`, `annually`).
+- `recurrence_text` is the machine-readable recurrence value for recurring events. The allowed set is defined once in `events/schemas/recurrence.py` (`ALLOWED_RECURRENCE_VALUES`) and enforced by:
+  - Pydantic (`EventPayload`) on ingest
+  - SQLAlchemy `@validates` on `Event.recurrence_pattern` and `Event.recurrence_text` before flush
+  - DB CHECK constraints on both columns (PostgreSQL via Alembic 004 + 006; SQLite via `Event.__table_args__` when using `create_all`)
 - If `is_recurring=true` and `recurrence_text` is missing or invalid, validation fails at write time.
 - Category, registration status, and priority values are strict enumerations validated before write.
+
+**Field names with Team 4A (Chanakya):** Locked — no post-sync renames expected for `price` / `sponsorship_tiers` nested keys (`amount`, `notes`; `tier_name`, `price`, `description`).
 
 ## SQLite fallback
 
