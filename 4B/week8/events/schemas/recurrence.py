@@ -13,8 +13,6 @@ ALLOWED_RECURRENCE_VALUES: tuple[str, ...] = (
     "weekly:friday",
     "weekly:saturday",
     "weekly:sunday",
-    "monthly",
-    "annually",
 )
 
 ALLOWED_RECURRENCE_SET = frozenset(ALLOWED_RECURRENCE_VALUES)

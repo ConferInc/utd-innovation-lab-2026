@@ -487,8 +487,6 @@ def _matches_recurrence(event: Event, reference_dt: datetime) -> bool:
     if pattern.startswith("weekly:"):
         expected_day = pattern.split(":", 1)[1].strip()
         return expected_day == weekday_name
-    if pattern in ("monthly", "annually"):
-        return True
 
     logger.warning(
         "Unsupported recurrence_text %r for event id=%s name=%r — treating as inactive",
