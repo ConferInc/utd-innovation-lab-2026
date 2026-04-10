@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
-from .recurrence import ALLOWED_RECURRENCE_VALUES, validate_recurrence_value
+from .recurrence import ALLOWED_RECURRENCE_VALUES, RecurrenceText, validate_recurrence_value
 
 class SponsorshipTier(BaseModel):
     tier_name: str
@@ -61,9 +61,12 @@ class EventPayload(BaseModel):
     category: Optional[Category] = None
     event_type: Optional[EventType] = None
     is_recurring: bool = False
-    recurrence_text: Optional[str] = Field(
+    recurrence_text: Optional[RecurrenceText] = Field(
         default=None,
-        description=f"Machine-readable recurrence; allowed: {', '.join(ALLOWED_RECURRENCE_VALUES)}",
+        description=(
+            "Machine-readable recurrence; constrained to RecurrenceText Literal; "
+            f"allowed: {', '.join(ALLOWED_RECURRENCE_VALUES)}"
+        ),
     )
     start_datetime: datetime
     end_datetime: Optional[datetime] = None

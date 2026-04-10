@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal, get_args
+
 ALLOWED_RECURRENCE_VALUES: tuple[str, ...] = (
     "daily",
     "weekdays",
@@ -16,6 +18,23 @@ ALLOWED_RECURRENCE_VALUES: tuple[str, ...] = (
 )
 
 ALLOWED_RECURRENCE_SET = frozenset(ALLOWED_RECURRENCE_VALUES)
+
+# Pydantic / static typing: must stay identical to ALLOWED_RECURRENCE_VALUES (checked below).
+RecurrenceText = Literal[
+    "daily",
+    "weekdays",
+    "weekends",
+    "weekly:monday",
+    "weekly:tuesday",
+    "weekly:wednesday",
+    "weekly:thursday",
+    "weekly:friday",
+    "weekly:saturday",
+    "weekly:sunday",
+]
+
+if frozenset(get_args(RecurrenceText)) != ALLOWED_RECURRENCE_SET:
+    raise RuntimeError("RecurrenceText Literal is out of sync with ALLOWED_RECURRENCE_VALUES")
 
 
 def normalize_recurrence_for_storage(value: str) -> str:
