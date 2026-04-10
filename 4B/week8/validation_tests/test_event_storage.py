@@ -118,6 +118,21 @@ def test_normalize_event_payload_rejects_invalid_recurrence_text() -> None:
         normalize_event_payload(payload)
 
 
+@pytest.mark.parametrize("bad_value", ["monthly", "annually"])
+def test_normalize_event_payload_rejects_removed_recurrence_values(bad_value: str) -> None:
+    payload = {
+        "name": "Removed Pattern",
+        "source_url": "https://example.org/bad",
+        "source_site": "jkyog",
+        "start_datetime": "2026-04-04T10:00:00Z",
+        "scraped_at": "2026-03-30T12:00:00Z",
+        "is_recurring": True,
+        "recurrence_text": bad_value,
+    }
+    with pytest.raises(ValidationError):
+        normalize_event_payload(payload)
+
+
 def test_normalize_event_payload_rejects_invalid_recurrence_pattern_alias() -> None:
     payload = {
         "name": "Bad Pattern",

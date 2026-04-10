@@ -39,6 +39,7 @@ Legacy sponsorship tier keys are normalized as:
 ## Validation assumptions
 
 - `recurrence_text` is the machine-readable recurrence value for recurring events. The allowed set is defined once in `events/schemas/recurrence.py` (`ALLOWED_RECURRENCE_VALUES`) and enforced by:
+  - Allowed values: `daily`, `weekdays`, `weekends`, `weekly:monday`, `weekly:tuesday`, `weekly:wednesday`, `weekly:thursday`, `weekly:friday`, `weekly:saturday`, `weekly:sunday`
   - Pydantic (`EventPayload`) on ingest
   - SQLAlchemy `@validates` on `Event.recurrence_pattern` and `Event.recurrence_text` before flush
   - DB CHECK constraints on both columns (PostgreSQL via Alembic 004 + 006; SQLite via `Event.__table_args__` when using `create_all`)
