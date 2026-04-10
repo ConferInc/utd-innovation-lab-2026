@@ -7,7 +7,7 @@
       "source_site": "radhakrishnatemple",
       "start_datetime": "2026-06-15T15:00:00Z",
       "scraped_at": "2026-04-01T12:00:00Z",
-      "location": "Allen, TX"
+      "location_name": "Allen, TX"
     },
     {
       "name": "Integration Health Fair",
@@ -15,7 +15,7 @@
       "source_site": "jkyog",
       "start_datetime": "2026-06-20T14:00:00Z",
       "scraped_at": "2026-04-01T12:00:00Z",
-      "location": "Allen, TX"
+      "location_name": "Allen, TX"
     }
   ]
 }

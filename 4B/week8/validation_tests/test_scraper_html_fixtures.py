@@ -97,7 +97,7 @@ def test_jkyog_scraper_fixture_finds_dallas_event() -> None:
         max_events=10,
     )
     assert len(result.events) >= 1
-    assert any("Dallas" in (ev.get("name") or "") or "dallas" in (ev.get("special_notes") or "").lower() for ev in result.events)
+    assert any("Dallas" in (ev.get("name") or "") or "dallas" in (ev.get("notes") or "").lower() for ev in result.events)
 
 
 def test_jkyog_malformed_calendar_returns_no_events_without_uncaught_exception() -> None:

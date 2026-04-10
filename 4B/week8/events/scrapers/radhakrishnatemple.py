@@ -297,7 +297,7 @@ def _parse_detail_page(detail_html: str, *, url: str) -> Dict[str, Any]:
     )
     start_dt, end_dt = extract_event_datetimes(text_blob)
 
-    special_notes = _extract_first(
+    notes = _extract_first(
         soup,
         [
             ".entry-content",
@@ -310,18 +310,16 @@ def _parse_detail_page(detail_html: str, *, url: str) -> Dict[str, Any]:
         "description": description,
         "start_datetime": start_dt,
         "end_datetime": end_dt,
-        "location": "JKYog Radha Krishna Temple",
-        "venue_details": None,
+        "location_name": "JKYog Radha Krishna Temple",
         "parking_notes": None,
         "food_info": None,
-        "sponsorship_data": [],
+        "sponsorship_tiers": [],
         "image_url": image_url,
         "source_url": url,
         "source_site": "radhakrishnatemple",
         "is_recurring": False,
-        "recurrence_pattern": None,
         "category": _guess_category(title),
-        "special_notes": special_notes,
+        "notes": notes,
         "scraped_at": _now_iso_z(),
     }
 

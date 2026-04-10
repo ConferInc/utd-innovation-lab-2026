@@ -93,7 +93,7 @@ def _fixture_scrape_bundle(fake: _MappingHttpClient) -> dict:
         key = (
             str(ev.get("name") or "").strip().lower(),
             str(ev.get("start_datetime") or "").strip(),
-            str(ev.get("location") or "").strip().lower(),
+            str(ev.get("location_name") or ev.get("location") or "").strip().lower(),
         )
         if key in seen:
             continue
