@@ -169,3 +169,45 @@ def test_get_event_by_id_sqlite(events_client: TestClient) -> None:
     response = events_client.get(f"/api/v2/events/{first_id}")
     assert response.status_code == 200
     assert response.json()["id"] == first_id
+
+
+def test_price_shape_is_canonical_even_when_empty(events_client: TestClient) -> None:
+    list_response = events_client.get("/api/v2/events", params={"limit": 10, "offset": 0})
+    first_id = list_response.json()["events"][0]["id"]
+
+    # Overwrite one row with empty JSON object to simulate legacy/inconsistent stored value.
+    override_db = events_client.app.dependency_overrides[get_db]
+    session_gen = override_db()
+    session = next(session_gen)
+    try:
+        event = session.query(Event).filter(Event.id == first_id).first()
+        assert event is not None
+        event.price = {}
+        session.commit()
+    finally:
+        session.close()
+
+    response = events_client.get(f"/api/v2/events/{first_id}")
+    assert response.status_code == 200
+    assert response.json()["price"] == {"amount": None, "notes": None}
+
+
+def test_price_shape_is_canonical_even_when_corrupt_type(events_client: TestClient) -> None:
+    list_response = events_client.get("/api/v2/events", params={"limit": 10, "offset": 0})
+    first_id = list_response.json()["events"][0]["id"]
+
+    # Simulate legacy/corrupt stored value with non-object JSON.
+    override_db = events_client.app.dependency_overrides[get_db]
+    session_gen = override_db()
+    session = next(session_gen)
+    try:
+        event = session.query(Event).filter(Event.id == first_id).first()
+        assert event is not None
+        event.price = "corrupt"
+        session.commit()
+    finally:
+        session.close()
+
+    response = events_client.get(f"/api/v2/events/{first_id}")
+    assert response.status_code == 200
+    assert response.json()["price"] == {"amount": None, "notes": None}

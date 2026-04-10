@@ -164,3 +164,15 @@ def test_is_event_stale_rejects_non_positive_threshold() -> None:
 
     with pytest.raises(ValueError):
         is_event_stale(now, now_utc=now, stale_after_days=0)
+
+
+def test_normalize_event_payload_defaults_price_to_canonical_shape() -> None:
+    payload = {
+        "name": "No Price Event",
+        "source_url": "https://example.org/no-price",
+        "source_site": "jkyog",
+        "start_datetime": "2026-04-04T10:00:00Z",
+    }
+
+    normalized = normalize_event_payload(payload)
+    assert normalized["price"] == {"amount": None, "notes": None}

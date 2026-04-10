@@ -139,7 +139,7 @@ def _validate_sponsorship_tiers(value: Any) -> List[Dict[str, Any]]:
 def _validate_price(value: Any) -> Dict[str, Any]:
     """Validate price object {amount, notes}."""
     if value is None:
-        return {}
+        return {"amount": None, "notes": None}
     if not isinstance(value, dict):
         raise ValueError("price must be an object with keys: amount, notes")
     result: Dict[str, Any] = {}
@@ -153,6 +153,30 @@ def _validate_price(value: Any) -> Dict[str, Any]:
         result["amount"] = None
     result["notes"] = _clean_optional_text(value.get("notes"))
     return result
+
+
+def _coerce_price_for_api(value: Any) -> Dict[str, Any]:
+    """Return canonical price shape for API output, even for bad stored values."""
+    if value is None:
+        return {"amount": None, "notes": None}
+    if not isinstance(value, dict):
+        logger.warning("Invalid stored price type %s; returning null price shape", type(value).__name__)
+        return {"amount": None, "notes": None}
+
+    amount_raw = value.get("amount")
+    if amount_raw is None:
+        amount = None
+    else:
+        try:
+            amount = float(amount_raw)
+        except (TypeError, ValueError):
+            logger.warning("Invalid stored price.amount value %r; returning null amount", amount_raw)
+            amount = None
+
+    return {
+        "amount": amount,
+        "notes": _clean_optional_text(value.get("notes")),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -325,7 +349,7 @@ def event_to_dict(
         "transportation_notes": event.transportation_notes,
         "food_info": event.food_info,
         # Pricing & Sponsorship
-        "price": event.price if event.price else {},
+        "price": _coerce_price_for_api(event.price),
         "sponsorship_tiers": event.sponsorship_tiers if event.sponsorship_tiers else [],
         # Source
         "source_url": event.source_url,
