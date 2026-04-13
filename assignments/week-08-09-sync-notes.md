@@ -24,7 +24,7 @@
   - Location details (address, city, state, postal code, country)  
   - Registration details (required, status, URL)  
   - Contact info, parking notes, transportation notes, food info  
-  - Prize, sponsorship tiers, source metadata, notes :contentReference[oaicite:1]{index=1}  
+  - Price, sponsorship tiers, source metadata, notes
 
 - Schema document uploaded in GitHub (`week 8` folder → schema alignment `.md`). 
 
