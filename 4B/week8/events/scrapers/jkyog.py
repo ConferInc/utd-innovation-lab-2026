@@ -1,3 +1,14 @@
+"""JKYog.org upcoming-events scraper — static HTML only.
+
+Fetches public pages with ``httpx`` and parses cards with BeautifulSoup. Rows
+that are injected purely via JavaScript after load will not be present in the
+fetched HTML and are therefore skipped without raising an error.
+
+When debugging empty results, compare against the live site in a browser with
+JS enabled; if content only appears after scripts run, plan a Playwright or
+Selenium-based fetch before expanding parsers here.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -9,6 +20,7 @@ from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
+from .category_from_title import guess_event_category
 from .datetime_extract import extract_event_datetimes
 from .http_client import RespectfulHttpClient
 
@@ -242,7 +254,7 @@ def scrape_jkyog_upcoming_events(
                         "source_url": link or page_url,
                         "source_site": "jkyog",
                         "is_recurring": False,
-                        "category": None,
+                        "category": guess_event_category(rich_text or card_text or title or ""),
                         "notes": rich_text or card_text or None,
                         "scraped_at": _now_iso_z(),
                     }

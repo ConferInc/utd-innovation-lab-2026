@@ -9,7 +9,7 @@ Usage:
     # Normal mode — load scraped_events.json
     python -m scripts.seed_from_scraped_json
 
-    # Fixture mode — use the committed snapshot for offline dev testing
+    # Fixture mode — use the committed snapshot (see data/scraped_events.fixture.json)
     python -m scripts.seed_from_scraped_json --fixture
 
     # Custom file
@@ -45,7 +45,13 @@ logger = logging.getLogger(__name__)
 # Default paths
 _DATA_DIR = _week_dir / "data"
 _DEFAULT_INPUT = _DATA_DIR / "scraped_events.json"
-_FIXTURE_INPUT = _DATA_DIR / "scraped_events.json"  # same file, used for --fixture flag
+# Committed dev snapshot (not live scrape output); safe to version-control.
+_FIXTURE_INPUT = _DATA_DIR / "scraped_events.fixture.json"
+
+
+def _strip_fixture_meta(obj: Dict[str, Any]) -> Dict[str, Any]:
+    """Remove non-ingestion keys (fixture disclaimers, tooling metadata)."""
+    return {k: v for k, v in obj.items() if not k.startswith("__")}
 
 
 def _load_input(path: Path) -> List[Dict[str, Any]]:
@@ -54,6 +60,7 @@ def _load_input(path: Path) -> List[Dict[str, Any]]:
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, dict):
+        payload = _strip_fixture_meta(payload)
         events = payload.get("events", [])
     elif isinstance(payload, list):
         events = payload
@@ -63,7 +70,11 @@ def _load_input(path: Path) -> List[Dict[str, Any]]:
     if not isinstance(events, list):
         raise ValueError("events must be a list")
 
-    return [item for item in events if isinstance(item, dict)]
+    cleaned: List[Dict[str, Any]] = []
+    for item in events:
+        if isinstance(item, dict):
+            cleaned.append(_strip_fixture_meta(item))
+    return cleaned
 
 
 def seed_from_file(db: Session, input_path: str) -> Dict[str, int]:
@@ -85,8 +96,8 @@ def main() -> None:
     parser.add_argument(
         "--fixture",
         action="store_true",
-        help="Use the committed scraped_events.json snapshot for offline dev testing "
-             "without re-scraping live websites.",
+        help="Use the committed data/scraped_events.fixture.json snapshot for offline "
+             "dev testing without re-scraping live websites.",
     )
     parser.add_argument(
         "--file",
