@@ -19,6 +19,13 @@ except ImportError:
     from events.services.event_query_cache import invalidate_events_cache
     from events.storage.event_storage import upsert_events
 
+_DATA_DIR = Path(__file__).resolve().parent.parent / "data"
+_FIXTURE_INPUT = _DATA_DIR / "scraped_events.fixture.json"
+
+
+def _strip_fixture_meta(obj: Dict[str, Any]) -> Dict[str, Any]:
+    return {k: v for k, v in obj.items() if not k.startswith("__")}
+
 
 def _load_input(path: Path) -> List[Dict[str, Any]]:
     if not path.is_file():
@@ -26,6 +33,7 @@ def _load_input(path: Path) -> List[Dict[str, Any]]:
 
     payload = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(payload, dict):
+        payload = _strip_fixture_meta(payload)
         events = payload.get("events", [])
     elif isinstance(payload, list):
         events = payload
@@ -35,7 +43,11 @@ def _load_input(path: Path) -> List[Dict[str, Any]]:
     if not isinstance(events, list):
         raise ValueError("events must be a list")
 
-    return [item for item in events if isinstance(item, dict)]
+    cleaned: List[Dict[str, Any]] = []
+    for item in events:
+        if isinstance(item, dict):
+            cleaned.append(_strip_fixture_meta(item))
+    return cleaned
 
 
 def seed_from_file(db: Session, input_path: str) -> Dict[str, int]:

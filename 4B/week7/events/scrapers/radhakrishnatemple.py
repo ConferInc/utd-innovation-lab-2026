@@ -1,3 +1,18 @@
+"""Radha Krishna Temple (Allen) event scraper — static HTML only.
+
+This module uses ``httpx`` + BeautifulSoup to parse server-rendered HTML. Any
+event listings or calendars that are built client-side with JavaScript will
+not appear in the DOM we fetch, so those events are silently missed (no error).
+
+If this scraper suddenly returns far fewer events than expected, first verify
+the upstream site did not switch to a JS-rendered calendar or move content
+behind different URLs.
+
+Upgrade path for JS-heavy sites: drive a headless browser (Playwright or
+Selenium), wait for selectors, then parse the rendered HTML or intercept XHR
+JSON responses.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -10,6 +25,7 @@ from urllib.parse import urljoin, urlparse, urlunparse
 import httpx
 from bs4 import BeautifulSoup
 
+from .category_from_title import guess_event_category
 from .datetime_extract import extract_event_datetimes
 from .http_client import RespectfulHttpClient
 
@@ -60,19 +76,6 @@ def _extract_first(soup: BeautifulSoup, selectors: List[str]) -> Optional[str]:
             text = _clean_text(node.get_text(" ", strip=True))
             if text:
                 return text
-    return None
-
-
-def _guess_category(title: str) -> Optional[str]:
-    t = title.lower()
-    if "navratri" in t:
-        return "navratri"
-    if "jayanti" in t:
-        return "jayanti"
-    if "ram" in t:
-        return "ram"
-    if "health" in t:
-        return "health"
     return None
 
 
@@ -297,7 +300,7 @@ def _parse_detail_page(detail_html: str, *, url: str) -> Dict[str, Any]:
     )
     start_dt, end_dt = extract_event_datetimes(text_blob)
 
-    special_notes = _extract_first(
+    notes = _extract_first(
         soup,
         [
             ".entry-content",
@@ -310,18 +313,16 @@ def _parse_detail_page(detail_html: str, *, url: str) -> Dict[str, Any]:
         "description": description,
         "start_datetime": start_dt,
         "end_datetime": end_dt,
-        "location": "JKYog Radha Krishna Temple",
-        "venue_details": None,
+        "location_name": "JKYog Radha Krishna Temple",
         "parking_notes": None,
         "food_info": None,
-        "sponsorship_data": [],
+        "sponsorship_tiers": [],
         "image_url": image_url,
         "source_url": url,
         "source_site": "radhakrishnatemple",
         "is_recurring": False,
-        "recurrence_pattern": None,
-        "category": _guess_category(title),
-        "special_notes": special_notes,
+        "category": guess_event_category(title),
+        "notes": notes,
         "scraped_at": _now_iso_z(),
     }
 
