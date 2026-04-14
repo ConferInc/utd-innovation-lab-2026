@@ -21,17 +21,35 @@ TIMEFRAMES = {
 }
 
 EVENT_NAMES = [
-    "holi festival",
-    "hanuman jayanti",
-    "ram navami",
-    "diwali gala"
+    "Lohri",
+    "Sakranti",
+    "Sanskriti",
+    "Mahashivratri",
+    "Holi",
+    "Ram Navami",
+    "Youth Leadership Workshop",
+    "Dallas Yoga Fest",
+    "JKYog Spiritual Retreat and Family Camp",
+    "Guru Poornima",
+    "LTP with Swami Mukudananda",
+    "Dallas Retreat",
+    "Janmashtami",
+    "Ganesh Chaturthi",
+    "Navratri",
+    "Dussehra",
+    "Deepavali",
+    "Diwali",
+    "New Year" 
 ]
 
 PROGRAM_NAMES = [
-    "darshan",
-    "aarti",
-    "satsang",
-    "yoga"
+    "Satsang",
+    "Abhishek",
+    "Sunderkand",
+    "Mata Ki Chowki",
+    "Aarti",
+    "Kirtan",
+    "Chalisa"
 ]
 
 
