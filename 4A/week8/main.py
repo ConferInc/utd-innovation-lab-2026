@@ -95,24 +95,18 @@ async def webhook(request: Request):
 
 # 5. Generate Response (Team 4B API or Local Logic)
     try:
-        context = {
-            "phone_number": form_data.get("From"),
-            "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
-            "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN")
-        }
+        context = {
+            "phone_number": form_data.get("From"),
+            "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
+            "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN")
+        }
     
-     
-    
-        reply_text = build_response(final_intent_data, context)
-    
-     
+        reply_text = build_response(final_intent_data, context)
     
     except Exception as e:
-        logger.error(f"Response Builder Failed: {e}")
-        reply_text = "Namaste! I'm having trouble fetching that right now. Please try again in a moment."
-
-
-
+        logger.error(f"Response Builder Failed: {e}")
+        reply_text = "Namaste! I'm having trouble fetching that right now. Please try again in a moment."
+        
     # 6. Fallback if reply is empty
     if not reply_text or len(reply_text.strip()) == 0:
         reply_text = "I'm not sure I understand. Try asking about 'parking', 'today's events', or 'satsang schedule'."
