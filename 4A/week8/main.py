@@ -1,7 +1,7 @@
 import os
 import logging
 from fastapi import FastAPI, Request, Response, HTTPException
-from twilio.util import RequestValidator
+from twilio.request_validator import RequestValidator
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
 
