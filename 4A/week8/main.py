@@ -75,6 +75,8 @@ async def whatsapp_webhook(request: Request):
         raw_intent = classify(user_message)
         mapped_intent = bridge_intent_to_builder(raw_intent, user_message)
         
+        logger.info(f"RAW INTENT: {raw_intent}")
+        logger.info(f"MAPPED INTENT: {mapped_intent}")
         
         context = {
             "phone_number": sender,
