@@ -5,8 +5,8 @@ from twilio.util import RequestValidator
 from twilio.twiml.messaging_response import MessagingResponse
 from dotenv import load_dotenv
 
-from intent_classifier import classify
-from response_builder import build_response
+from .intent_classifier import classify
+from .response_builder import build_response
 
 load_dotenv()
 
