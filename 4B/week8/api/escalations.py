@@ -11,16 +11,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy.orm import Session
 
-from ..authentication.internal_bearer import verify_escalations_bearer
-from ..authentication.session_manager import update_session_context
-from ..database.models import get_db
-from ..database.schema import Escalation
-from ..database.state_tracking import (
+from authentication.internal_bearer import verify_escalations_bearer
+from authentication.session_manager import update_session_context
+from database.models import get_db
+from database.schema import Escalation
+from database.state_tracking import (
     create_escalation,
     get_escalation_by_id,
     update_escalation_status,
 )
-from ..events.schemas.event_payload import EscalationResponse
+from events.schemas.event_payload import EscalationResponse
 
 logger = logging.getLogger("week8.escalations")
 

@@ -1,7 +1,7 @@
 # auth/phone_verification.py
 from sqlalchemy.orm import Session
 
-from ..database.state_tracking import (
+from database.state_tracking import (
     get_or_create_user,
     get_or_create_active_conversation,
 )

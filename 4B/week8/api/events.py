@@ -7,9 +7,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..database.models import get_db
-from ..events.services.event_query_cache import get_shared_event_query_cache
-from ..events.services.event_service import EventService
+from database.models import get_db
+from events.services.event_query_cache import get_shared_event_query_cache
+from events.services.event_service import EventService
 
 router = APIRouter(tags=["events"])
 

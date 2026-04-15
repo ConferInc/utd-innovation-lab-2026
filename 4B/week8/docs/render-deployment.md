@@ -5,6 +5,8 @@ This document serves as a guide on how to deploy the JKYog WhatsApp Bot on Rende
 ## 1. Overview 
 The Week 8 bot is deployed as a Python web service on Render. The application uses FastAPI as the backend framework and Uvicorn as the ASGI server. 
 
+The application exposes webhook endpoints for both Twilio (WhatsApp) and Stripe integrations.
+
 The deployment uses the following tools and services:
 - Render Web Service 
 - Python 3.11
@@ -141,6 +143,14 @@ https://<your-render-service>.onrender.com/webhook/whatsapp
 - Sends a WhatsApp reply 
 
 **Important:** The deployment public URL must match what Twilio calls, because signature validation depends on the request URL. 
+
+## 8.1 Stripe Webhook Setup
+
+### Webhook URL
+
+```bash
+https://<your-render-service>.onrender.com/api/stripe/webhook
+```
 
 ## 9. Health Checks and Test Endpoints 
 After deployment, test the following endpoints:

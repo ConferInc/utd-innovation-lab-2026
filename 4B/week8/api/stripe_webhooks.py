@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Request, HTTPException
-from ..integrations.stripe import StripeIntegration
+from integrations.stripe import StripeIntegration
 
 router = APIRouter()
 

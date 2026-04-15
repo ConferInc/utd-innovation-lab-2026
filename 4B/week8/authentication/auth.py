@@ -3,7 +3,7 @@ import os
 from fastapi import Request, Depends, HTTPException
 from sqlalchemy.orm import Session
 
-from ..database.models import get_db
+from database.models import get_db
 from .phone_verification import authenticate_phone_user
 from .session_manager import generate_session, validate_session
 

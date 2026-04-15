@@ -22,17 +22,17 @@ from fastapi import BackgroundTasks, Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
-from .authentication.auth import verify_whatsapp_request
-from .authentication.session_manager import update_session_context
-from .bot.intent_classifier import classify_intent
-from .bot.response_builder import build_response
-from .api.escalations import router as escalations_router
-from .api.stripe_webhooks import router as stripe_webhook_router
-from .api.events import router as events_router
-from .database.models import SessionLocal, check_db_health, get_db, init_db
-from .database.state_tracking import log_message
-from .service_wrappers import StripeWrapper, MapsWrapper, CalendarWrapper
-from .service_wrappers.base_wrapper import CircuitBreakerOpenError, NonRetryableServiceError
+from authentication.auth import verify_whatsapp_request
+from authentication.session_manager import update_session_context
+from bot.intent_classifier import classify_intent
+from bot.response_builder import build_response
+from api.escalations import router as escalations_router
+from api.stripe_webhooks import router as stripe_webhook_router
+from api.events import router as events_router
+from database.models import SessionLocal, check_db_health, get_db, init_db
+from database.state_tracking import log_message
+from service_wrappers import StripeWrapper, MapsWrapper, CalendarWrapper
+from service_wrappers.base_wrapper import CircuitBreakerOpenError, NonRetryableServiceError
 
 
 logging.basicConfig(
@@ -66,7 +66,7 @@ app = FastAPI(
 
 app.include_router(escalations_router, prefix="/escalations")
 
-app.include_router(stripe_webhook_router)
+app.include_router(stripe_webhook_router, prefix="/api")
 
 app.include_router(events_router, prefix="/api/v2/events")
 
