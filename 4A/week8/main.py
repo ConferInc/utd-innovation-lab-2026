@@ -21,6 +21,9 @@ def bridge_intent_to_builder(classifier_output: dict, message: str) -> dict:
     if "weekend" in msg or "today" in msg or "tonight" in msg:
         return {"intent": "event_list", "entities": {"timeframe": "upcoming"}}
 
+    if any(t in msg for t in ["am", "pm", "morning", "evening", "night"]):
+        return {"intent": "time_filtered_events"}
+
     if "satsang" in msg:
         return {"intent": "recurring_events"}
 
