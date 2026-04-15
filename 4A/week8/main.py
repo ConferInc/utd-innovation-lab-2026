@@ -91,7 +91,7 @@ async def whatsapp_webhook(request: Request):
     
     twiml = MessagingResponse()
     twiml.message(reply_text)
-    return Response(content="<Response><Message>Your reply</Message></Response>",media_type="application/xml")
+    return Response(content=str(twiml), media_type="application/xml")
 
 @app.get("/health")
 def health():
