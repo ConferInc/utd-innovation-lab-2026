@@ -81,16 +81,8 @@ async def webhook(request: Request):
     # 3. Classify Intent using AI (Rujul's code + Google API Key)
 # Inside your webhook function, change Step 3 to this:
     try:
+        # Pass the message body to the AI classifier
         raw_classification = classify(body_text)
-        
-        # FIX: If the AI returned a string, turn it into a dictionary
-        if isinstance(raw_classification, str):
-            try:
-                raw_classification = json.loads(raw_classification)
-            except:
-                # Fallback if it's not valid JSON
-                raw_classification = {"intent": "unknown", "entities": {}}
-                
         logger.info(f"RAW AI OUTPUT: {raw_classification}")
     except Exception as e:
         logger.error(f"AI Classification Failed: {e}")
@@ -100,11 +92,26 @@ async def webhook(request: Request):
     logger.info(f"FINAL MAPPED INTENT: {final_intent_data}")
 
     # 5. Generate Response (Team 4B API or Local Logic)
+
+# 5. Generate Response (Team 4B API or Local Logic)
     try:
-        reply_text = build_response(final_intent_data, body_text)
+        context = {
+            "phone_number": form_data.get("From"),
+            "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
+            "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN")
+        }
+    
+     
+    
+        reply_text = build_response(final_intent_data, context)
+    
+     
+    
     except Exception as e:
-        logger.error(f"Response Builder Failed: {e}")
-        reply_text = "Namaste! I'm having trouble fetching that right now. Please try again in a moment."
+        logger.error(f"Response Builder Failed: {e}")
+        reply_text = "Namaste! I'm having trouble fetching that right now. Please try again in a moment."
+
+
 
     # 6. Fallback if reply is empty
     if not reply_text or len(reply_text.strip()) == 0:
