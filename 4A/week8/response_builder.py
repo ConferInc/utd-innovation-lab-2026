@@ -3,8 +3,8 @@
 from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
-from .api_client import APIClientError, APIConfig, EventAPIClient
-from .recurring_handler import get_current_schedule, TIMEZONE
+from api_client import APIClientError, APIConfig, EventAPIClient
+from recurring_handler import get_current_schedule, TIMEZONE
 
 WHATSAPP_CHAR_LIMIT = 4096
 MISSING_FIELD_TEXT = "Not listed on the event page"
