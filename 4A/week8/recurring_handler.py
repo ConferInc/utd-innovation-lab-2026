@@ -1,15 +1,8 @@
-
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
-# =========================
-# TIMEZONE
-# =========================
 TIMEZONE = ZoneInfo("America/Chicago")
 
-# =========================
-# SCHEDULE DATA
-# =========================
 SCHEDULE = {
     "darshan_weekday": {
         "recurrence_pattern": "weekdays",
@@ -41,9 +34,6 @@ SCHEDULE = {
     }
 }
 
-# =========================
-# EXCEPTIONS
-# =========================
 EXCEPTIONS = {
     "2026-04-08": {
         "closed": True,
@@ -51,10 +41,6 @@ EXCEPTIONS = {
         "affected_programs": ["darshan", "aarti", "bhog"]
     }
 }
-
-# =========================
-# HELPERS
-# =========================
 
 def to_datetime(time_str: str, base_date: date) -> datetime:
     hour, minute = map(int, time_str.split(":"))
@@ -66,7 +52,6 @@ def to_datetime(time_str: str, base_date: date) -> datetime:
         minute,
         tzinfo=TIMEZONE
     )
-
 
 def matches_pattern(pattern: str, current_day: int) -> bool:
     if pattern == "daily":
@@ -85,22 +70,16 @@ def matches_pattern(pattern: str, current_day: int) -> bool:
         return current_day == days[day]
     return False
 
-
 def check_exception(check_date: date):
     exception = EXCEPTIONS.get(str(check_date))
     if exception:
         return exception.get("reason")
     return None
 
-
 def get_program_data(program: str, day: int):
     if program == "darshan":
         return SCHEDULE["darshan_weekday"] if day < 5 else SCHEDULE["darshan_weekend"]
     return SCHEDULE.get(program)
-
-# =========================
-# CORE FUNCTIONS
-# =========================
 
 def is_happening_now(program: str, now: datetime) -> bool:
     today = now.date()
@@ -127,7 +106,6 @@ def is_happening_now(program: str, now: datetime) -> bool:
 
     return False
 
-
 def get_next_occurrence(program: str, from_time: datetime):
     for i in range(7):
         check_day = from_time + timedelta(days=i)
@@ -151,9 +129,7 @@ def get_next_occurrence(program: str, from_time: datetime):
                     "end": end_dt,
                     "day": check_day.strftime("%A")
                 }
-
     return None
-
 
 def get_current_schedule(now: datetime):
     live = []
@@ -178,7 +154,6 @@ def get_current_schedule(now: datetime):
         "exception": exception_message
     }
 
-
 def get_full_day_schedule(check_date: date):
     result = []
     day = check_date.weekday()
@@ -202,18 +177,11 @@ def get_full_day_schedule(check_date: date):
 
     return sorted(result, key=lambda x: x["start"])
 
-
-# =========================
-# TEST BLOCK
-# =========================
 if __name__ == "__main__":
     now = datetime.now(TIMEZONE)
-
     print("\n--- CURRENT SCHEDULE ---")
     print(get_current_schedule(now))
-
     print("\n--- NEXT AARTI ---")
     print(get_next_occurrence("aarti", now))
-
     print("\n--- FULL DAY SCHEDULE ---")
     print(get_full_day_schedule(now.date()))
