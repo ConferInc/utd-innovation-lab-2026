@@ -20,26 +20,10 @@ load_dotenv()
 
 app = FastAPI(title="JKYog WhatsApp Bot")
 
-def bridge_intent_to_builder(classifier_output: dict, message: str) -> dict:
-    msg = message.lower()
-
-    if "weekend" in msg or "today" in msg or "tonight" in msg:
-        return {"intent": "event_list", "entities": {"timeframe": "upcoming"}}
-    if any(t in msg for t in ["am", "pm", "morning", "evening", "night"]):
-        return {"intent": "time_filtered_events"}
-    if "satsang" in msg:
-        return {"intent": "recurring_events"}
-    if "hanuman" in msg:
-        return {"intent": "single_event_detail", "entities": {"event_name": "hanuman jayanti"}}
-    if any(k in msg for k in ["parking", "food", "directions"]):
-        return {"intent": "logistics_parking"}
-
-    return classifier_output
-
 def send_whatsapp_message(to: str, body: str) -> str:
     client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
     
-    
+    # Safely format the WhatsApp number to prevent Twilio 400 errors
     formatted_to = to if to.startswith("whatsapp:") else f"whatsapp:{to if to.startswith('+') else '+' + to}"
     
     msg = client.messages.create(
@@ -53,14 +37,12 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
     start_time = time.monotonic()
     
     try:
-        raw_classification = classify(body_text)
-        logger.info(f"AI CLASSIFICATION: {raw_classification}")
+        # 1. Let the AI (Gemini) completely classify the intent
+        intent_data = classify(body_text)
+        logger.info(f"AI CLASSIFICATION: {intent_data}")
     except Exception as e:
         logger.error(f"Classification Failed: {e}", exc_info=True)
-        raw_classification = {"intent": "unknown", "entities": {}, "confidence": 0.0}
-
-    final_intent_data = bridge_intent_to_builder(raw_classification, body_text)
-    logger.info(f"MAPPED INTENT: {final_intent_data}")
+        intent_data = {"intent": "unknown", "entities": {}, "confidence": 0.0}
 
     try:
         context = {
@@ -69,13 +51,8 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
             "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN"),
         }
         
-        reply_text = build_response(final_intent_data, context)
-
-        msg = body_text.lower()
-        if "satsang" in msg and "time" in msg:
-            reply_text = "Sunday Satsang is typically held in the morning. Please check the temple for exact timings."
-        if "hanuman" in msg:
-            reply_text = "Hanuman Jayanti is a special celebration honoring Lord Hanuman. Please check temple announcements for event details."
+        # 2. Pass the AI's exact intent straight to the builder to fetch from the API
+        reply_text = build_response(intent_data, context)
 
     except Exception as e:
         logger.error(f"Response Builder Failed: {e}", exc_info=True)
@@ -85,6 +62,7 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         reply_text = "I'm not sure I understand. Try asking about 'parking', 'today's events', or 'satsang schedule'."
 
     try:
+        # 3. Send the real API response to Twilio
         send_whatsapp_message(to=sender_phone, body=reply_text)
         elapsed = int((time.monotonic() - start_time) * 1000)
         logger.info(f"Message processed and sent successfully in {elapsed}ms to {sender_phone}")
