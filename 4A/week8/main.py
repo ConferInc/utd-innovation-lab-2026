@@ -38,11 +38,14 @@ def bridge_intent_to_builder(classifier_output: dict, message: str) -> dict:
 
 def send_whatsapp_message(to: str, body: str) -> str:
     client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
-    to_e164 = to if to.startswith("+") else f"+{to}"
+    
+    
+    formatted_to = to if to.startswith("whatsapp:") else f"whatsapp:{to if to.startswith('+') else '+' + to}"
+    
     msg = client.messages.create(
         from_=os.environ.get("TWILIO_WHATSAPP_FROM", ""),
         body=body,
-        to=f"whatsapp:{to_e164}",
+        to=formatted_to,
     )
     return getattr(msg, "sid", "")
 
