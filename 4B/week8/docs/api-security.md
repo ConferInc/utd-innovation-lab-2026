@@ -43,3 +43,15 @@ The escalations router requires a valid **Bearer** token on every request. The s
 | `/escalations/*` | Yes — `Authorization: Bearer …` |
 | `/stripe/webhook` | Stripe’s `Stripe-Signature` only |
 | `/webhook/whatsapp` | Twilio-validated request (platform-managed) |
+
+## If events become user-specific later
+
+Current events endpoints are intentionally public because responses are read-only and do not include user-specific or sensitive data.
+
+If the product later adds personalized data (for example saved events, user-specific recommendations, or private attendance metadata), the API should change as follows:
+
+1. Require caller authentication on affected routes (JWT/session token or service-to-service auth).
+2. Introduce authorization checks so callers can only access data they are allowed to see.
+3. Split public catalog routes from private user routes (for example `/api/v2/events` stays public while `/api/v2/users/{id}/events` is protected).
+4. Add audit-friendly logging for access to private endpoints and tighten rate limits.
+5. Update Team 4A client guidance to send auth headers only on protected routes.

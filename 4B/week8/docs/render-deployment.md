@@ -189,6 +189,8 @@ GET /api/v2/events/search?q=test
 GET /api/v2/events/1
 ```
 
+Live proof artifact: [live-events-api-proof.md](live-events-api-proof.md)
+
 ### Additional Test Endpoints 
 Below are some additional points that help verify integrations.
 ```
