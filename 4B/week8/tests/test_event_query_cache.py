@@ -3,8 +3,27 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
+import sys
 
-from week8.events.services.event_query_cache import EventQueryCache
+_4B_ROOT = Path(__file__).resolve().parents[2]
+_WEEK8_ROOT = Path(__file__).resolve().parents[1]
+for p in (str(_WEEK8_ROOT), str(_4B_ROOT)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
+
+try:
+    from events.services.event_query_cache import (
+        EventQueryCache,
+        get_shared_event_query_cache,
+        reset_shared_event_query_cache_for_tests,
+    )
+except ImportError:
+    from week8.events.services.event_query_cache import (
+        EventQueryCache,
+        get_shared_event_query_cache,
+        reset_shared_event_query_cache_for_tests,
+    )
 
 
 def test_lru_evicts_oldest_when_max_size_exceeded() -> None:
@@ -49,3 +68,15 @@ def test_zero_max_size_disables_eviction_cap() -> None:
     for i in range(10):
         cache.set((i,), i)
     assert len(cache._store) == 10  # noqa: SLF001
+
+
+def test_shared_cache_honors_max_size_and_lru_on_first_create() -> None:
+    reset_shared_event_query_cache_for_tests()
+    shared = get_shared_event_query_cache(max_size=2)
+    shared.set(("a",), "A")
+    shared.set(("b",), "B")
+    assert shared.get(("a",)) == "A"  # refresh a => b becomes LRU
+    shared.set(("c",), "C")
+    assert shared.get(("b",)) is None
+    assert shared.get(("a",)) == "A"
+    assert shared.get(("c",)) == "C"

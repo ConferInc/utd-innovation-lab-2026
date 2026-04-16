@@ -20,16 +20,29 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 _4B_ROOT = Path(__file__).resolve().parents[2]
-if str(_4B_ROOT) not in sys.path:
-    sys.path.insert(0, str(_4B_ROOT))
+_WEEK8_ROOT = Path(__file__).resolve().parents[1]
+for p in (str(_WEEK8_ROOT), str(_4B_ROOT)):
+    if p not in sys.path:
+        sys.path.insert(0, p)
 
-from week8.api.events import router as events_router
-from week8.database.models import Base, get_db
-from week8.database.schema import Event
-from week8.events.services.event_query_cache import reset_shared_event_query_cache_for_tests
-from week8.events.services.event_service import EventService
-from week8.events.storage.event_storage import upsert_events
-from week8.knowledge_base.ingestion import clear_ingested_events, ingest_events, search_kb
+try:
+    from api.events import router as events_router
+    from database.models import Base, get_db
+    from database.schema import Event
+    from events.storage import event_storage as event_storage_module
+    from events.services.event_query_cache import reset_shared_event_query_cache_for_tests
+    from events.services.event_service import EventService
+    from events.storage.event_storage import upsert_events
+    from knowledge_base.ingestion import clear_ingested_events, ingest_events, search_kb
+except ImportError:
+    from week8.api.events import router as events_router
+    from week8.database.models import Base, get_db
+    from week8.database.schema import Event
+    from week8.events.storage import event_storage as event_storage_module
+    from week8.events.services.event_query_cache import reset_shared_event_query_cache_for_tests
+    from week8.events.services.event_service import EventService
+    from week8.events.storage.event_storage import upsert_events
+    from week8.knowledge_base.ingestion import clear_ingested_events, ingest_events, search_kb
 
 
 API_PREFIX = "/api/v2/events"
@@ -150,7 +163,7 @@ def test_today_filter_http():
                 )
             ],
         )
-        with patch("week8.events.storage.event_storage._now", return_value=fixed_now):
+        with patch.object(event_storage_module, "_now", return_value=fixed_now):
             client = _make_app(SessionLocal)
             r = client.get(f"{API_PREFIX}/today")
         assert r.status_code == 200
