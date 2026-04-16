@@ -23,7 +23,7 @@ This API acts as a:
 - Align scraped data with backend consumption  
 - Standardize terminology across teams  
 - Provide a scalable API design  
-- Support real-world user queries  
+- Support real-world user queries
 
 ---
 
@@ -40,7 +40,7 @@ This API acts as a:
 - Aarti  
 - Satsang  
 - Bhajans  
-- Mahaprasad  
+- Mahaprasad
 
 ---
 
@@ -56,13 +56,11 @@ Events API
 ↓  
 Backend (Team 4A)  
 ↓  
-WhatsApp Bot  
+WhatsApp Bot
 
 ---
 
 ## 1. Master Shared Vocabulary Table
-
-This table is the "Source of Truth" for all documentation across Team 4A and Team 4B.
 
 ### Data & Engineering Domain
 
@@ -104,62 +102,53 @@ This table is the "Source of Truth" for all documentation across Team 4A and Tea
 
 ## ⚠️ Tech Debt Resolution
 
-### Fixes Implemented
-
-## Issues Identified
+### Issues Identified
 - TwiML vs JSON inconsistency  
 - API version mismatch (`/events` vs `/v2/events`)  
 - Authentication ambiguity  
 - Schema mismatch between data and backend  
 
-## Fixes Applied
+### Fixes Applied
 - Standardized all responses to **JSON**  
 - Unified API structure → `/api/v2/events`  
 - Adopted session-based authentication  
-- Fully aligned with canonical schema 
+- Fully aligned with canonical schema
 
 ---
 
 ## 2. Canonical Event Schema
 
 ```json
-"id": "integer",
+{
+  "id": "integer",
   "name": "string",
   "subtitle": "string | null",
   "category": "festival | retreat | satsang | youth | class | workshop | special_event | other",
   "event_type": "in_person | online | hybrid | unknown",
   "is_recurring": "boolean",
   "recurrence_text": "string | null",
-
   "start_datetime": "ISO-8601 string | null",
   "end_datetime": "ISO-8601 string | null",
   "timezone": "string | null",
-
   "location_name": "string | null",
   "address": "string | null",
   "city": "string | null",
   "state": "string | null",
   "postal_code": "string | null",
   "country": "string | null",
-
   "description": "string | null",
-
   "registration_required": "boolean | null",
   "registration_status": "open | closed | unknown",
   "registration_url": "string | null",
-
   "contact_email": "string | null",
   "contact_phone": "string | null",
-
   "parking_notes": "string | null",
   "transportation_notes": "string | null",
   "food_info": "string | null",
-
   "price": {
     "amount": "number | null",
     "notes": "string | null"
   },
-
   "sponsorship_tiers": [
     {
       "tier_name": "string",
@@ -167,11 +156,9 @@ This table is the "Source of Truth" for all documentation across Team 4A and Tea
       "description": "string | null"
     }
   ],
-
   "source_url": "string",
   "source_site": "jkyog | radhakrishnatemple",
   "source_page_type": "event_detail | upcoming_events | sponsorship_page | logistics_page",
-
   "scraped_at": "ISO-8601 string",
   "source_confidence": "high | medium | low",
   "notes": "string | null"
@@ -182,27 +169,15 @@ This table is the "Source of Truth" for all documentation across Team 4A and Tea
 
 ## 3. Events API Contract v2.1
 
-This contract specifies the retrieval logic for the JKYog Knowledge Base events.
-
 ### Base URL
 `/api/v2/events`
 
----
-
 ### GET /events
-**Description:** Fetch all upcoming events  
 
-**Request:**  
-`GET /api/v2/events?date=2026-04-05`
+```http
+GET /api/v2/events?date=2026-04-05
+```
 
-**Query Parameters:**
-- date (YYYY-MM-DD)
-- category
-- start_date
-- end_date
-- limit
-
-**Response:**
 ```json
 {
   "events": [],
@@ -213,12 +188,11 @@ This contract specifies the retrieval logic for the JKYog Knowledge Base events.
 ---
 
 ### GET /events/today
-**Description:** Returns today's events  
 
-**Request:**  
-`GET /api/v2/events/today`
+```http
+GET /api/v2/events/today
+```
 
-**Response:**
 ```json
 {
   "date": "YYYY-MM-DD",
@@ -229,12 +203,11 @@ This contract specifies the retrieval logic for the JKYog Knowledge Base events.
 ---
 
 ### GET /events/{id}
-**Description:** Fetch event details  
 
-**Request:**  
-`GET /api/v2/events/101`
+```http
+GET /api/v2/events/101
+```
 
-**Response:**
 ```json
 {
   "id": 101,
@@ -247,12 +220,11 @@ This contract specifies the retrieval logic for the JKYog Knowledge Base events.
 ---
 
 ### GET /events/search
-**Description:** Search events  
 
-**Request:**  
-`GET /api/v2/events/search?q=holi`
+```http
+GET /api/v2/events/search?q=holi
+```
 
-**Response:**
 ```json
 {
   "results": []
@@ -262,12 +234,11 @@ This contract specifies the retrieval logic for the JKYog Knowledge Base events.
 ---
 
 ### GET /events/recurring
-**Description:** Fetch recurring programs  
 
-**Request:**  
-`GET /api/v2/events/recurring`
+```http
+GET /api/v2/events/recurring
+```
 
-**Response:**
 ```json
 {
   "recurring_events": []
@@ -278,10 +249,10 @@ This contract specifies the retrieval logic for the JKYog Knowledge Base events.
 
 ### Backend Logic
 
-- Normalize scraped data into canonical schema
-- Allow null values for missing fields 
-- Deduplicate events using name + date 
-- Merge multi-source data 
+- Normalize scraped data into canonical schema  
+- Allow null values for missing fields  
+- Deduplicate events using name + date  
+- Merge multi-source data  
 - Handle recurring events separately
 
 ---
@@ -322,108 +293,93 @@ This contract specifies the retrieval logic for the JKYog Knowledge Base events.
 
 ---
 
-###  Integration
+### Integration
 
 - Response Builder → calls Events API  
 - Entity Extractor → sends filters  
 - Session Manager → stores context  
-- Escalation → triggered when needed  
+- Escalation → triggered when needed
 
----
 ---
 
 ## 4. System Reliability & Recovery Plan (Updated)
 
-This section supersedes the earlier reliability notes and reflects the **final validated system behavior** aligned with production readiness and ITM disaster recovery standards.
-
 ### Reliability Metrics
+
 - Burst Capacity: Verified for 50-request spikes  
 - Concurrency: Validated for 10 simultaneous users  
-- SLA (Search): Target < 800ms | Max (p95) 1200ms  
+- SLA (Search): Target < 800ms | Max (p95) 1200ms
 
 ---
 
 ### Database Failure Recovery Process
 
-**1. Detection**  
-- Automated triggers detect:
-  - `503 Service Unavailable`  
-  - `DB Connection Refused`  
+**1. Detection**
+- `503 Service Unavailable`  
+- `DB Connection Refused`
 
-**2. Graceful Degradation**  
-- Bot layer handles API failures and returns fallback response:  
-  > "I could not retrieve event info right now. Please try again soon."
+**2. Graceful Degradation**
+> I could not retrieve event info right now. Please try again soon.
 
-**3. Failover Strategy**  
-- Update `DATABASE_URL` to:
-  - Read Replica  
-  - Standby instance  
+**3. Failover Strategy**
+- Update DATABASE_URL to replica
 
-**4. Point-in-Time Recovery**  
-- Restore from latest snapshot:
+**4. Point-in-Time Recovery**
+
 ```bash
-  pg_restore -d jkyog_prod backup_file.dump
+pg_restore -d jkyog_prod backup_file.dump
+```
+
+---
 
 ## 5. Post-Recovery Validation
- 
-After recovery, the system must be validated to ensure full operational integrity.
- 
+
 ### Migration Check
+
 ```bash
 alembic upgrade head
+```
+
+### Validate API Health
 
 ```http
 GET /api/v2/events/today
+```
+
+---
 
 ## 6. Architectural Note: Hybrid Response Pattern (Updated)
 
-This section supersedes earlier TwiML vs JSON discussions and defines the **final agreed architecture**.
-
----
-
 ### Internal Communication
+- JSON payloads
 
-All internal services communicate using **JSON payloads**, which supports:
-
-- Structured event data  
-- Flexible response building  
-- Easier debugging and scalability  
-
----
-
-### External Communication (Twilio)
-
-The system entry point (`main.py`) performs the final transformation:
-
-- Converts JSON responses → TwiML (XML)  
-- Ensures compatibility with Twilio’s WhatsApp protocol  
-
----
+### External Communication
+- JSON → TwiML via main.py
 
 ### Final Flow
 
-```text id="kqsm0u"
+```text
 Internal Services → JSON → Response Builder → main.py → TwiML → WhatsApp
+```
+
 ---
 
 ## 🎯 Final Summary
 
-This API enables the bot to answer:
+- What’s happening tonight?  
+- When is Hanuman Jayanti?  
+- Is there parking for Ram Navami?
 
-- “What’s happening tonight?”  
-- “When is Hanuman Jayanti?”  
-- “Is there parking for Ram Navami?”
+---
 
 ## 📌 Superseding Note
 
-The above sections represent the **final, production-aligned updates** and override earlier assumptions regarding:
-
+Overrides:
 - System reliability  
 - Error handling  
 - TwiML vs JSON architecture  
 
-This ensures consistency across:
-
+Ensures consistency across:
 - API contract  
 - Backend implementation  
-- WhatsApp delivery layer  
+- WhatsApp delivery layer
