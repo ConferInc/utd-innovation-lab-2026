@@ -177,10 +177,36 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
    - Identify root cause
    - Improve backup/monitoring strategy
 
-| Parameter             | v1     | v2         | Description                |
-|-----------------------|--------|------------|----------------------------|
-| API_VERSION           | v1     | v2         | Updated webhook version    |
-| TWILIO_ACCOUNT_SID    | N/A    | Required   | Twilio account ID          |
-| TWILIO_AUTH_TOKEN     | N/A    | Required   | Twilio auth token          |
-| TWILIO_PHONE_NUMBER   | N/A    | Required   | WhatsApp sender number     |
-| WEBHOOK_URL           | basic  | /v2/webhook/whatsapp | Updated endpoint |
+🤖 Bot Layer Reliability & Recovery Process
+
+In case the backend API or database is unavailable, the bot maintains availability using graceful degradation.
+
+RTO: ≤ 30 min | RPO: ≤ 5 min
+
+🔌 Circuit Breaking
+api_client.py uses 30s timeout
+Raises APIConnectionError if backend fails
+🛡️ Internal Safe Mode
+main.py catches all API errors
+Prevents crash and triggers fallback response
+📚 Local Knowledge Activation
+For recurring schedules:
+Bypass API
+Use recurring_handler.py
+Ensures temple timings remain available
+⚠️ Static Fallback
+
+If search fails:
+
+"I'm having trouble reaching the temple records right now, but you can usually find our daily schedule at [URL]."
+❤️ Health Monitoring
+/health endpoint exposed
+Enables uptime tracking independent of backend
+✅ Summary
+
+This migration:
+
+Transitions system to Twilio WhatsApp protocol
+Improves scalability and real-world integration
+Adds resilience via DB recovery + bot fallback
+Ensures system remains functional even during failures
