@@ -40,9 +40,19 @@ STRIPE_WEBHOOK_SECRET – Used to verify incoming Stripe webhooks
 
 ## Event Pipeline
 
-SCRAPER_TARGET_URLS – URLs for temple websites
-SCRAPER_INTERVAL – Frequency of scraping
-DATABASE_URL – Database connection string
+SCRAPER_TARGET_URLS – URLs for temple websites  
+SCRAPER_INTERVAL – Frequency of scraping  
+`DATABASE_URL` – Database connection string (see main table above)
+
+### Event scraper HTTP client (`events/scrapers/http_client.py`)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EVENT_SCRAPER_USER_AGENT` | `JKYogTempleBot/1.0 (...)` | User-Agent sent on every scrape request |
+| `EVENT_SCRAPER_TIMEOUT_SECONDS` | `20` | Per-request timeout (seconds) |
+| `EVENT_SCRAPER_MIN_DELAY_SECONDS` | `1` | Minimum spacing between requests to the same client (politeness) |
+| `EVENT_SCRAPER_MAX_RETRIES` | `3` | Extra attempts after a **transient** failure (HTTP 5xx, timeouts, connection errors). Total tries = `max_retries + 1`. **No retries on 4xx.** |
+| `EVENT_SCRAPER_BACKOFF_FACTOR` | `1.0` | After each transient failure, sleep `factor * 1s`, then `factor * 2s`, then `factor * 4s`, … before the next attempt |
 
 ---
 

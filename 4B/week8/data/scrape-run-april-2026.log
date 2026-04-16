@@ -1,0 +1,25 @@
+Week 8 scrape + seed run log (text summary)
+Date: 2026-04-13
+Run by: Chakradhar Gummakonda
+Environment: Windows, cmd, repo 4B/week8, .venv active
+
+Scrape:
+  Command: python -m scripts.scrape_events
+  Output: data/scraped_events.json
+  Summary: 17 events written; 32 skipped (invalid/missing start_datetime); errors included 404 on one temple URL; dateutil UnknownTimezoneWarning for CST and T on some parses.
+
+Seed (Render production Postgres, DATABASE_URL set in shell - secret not recorded):
+  Run 1: python -m scripts.seed_from_scraped_json --file data\scraped_events.json
+  Run 1 stats: inserted=1, updated=16, failed=0, kb_events_ingested=2
+  Run 2: same command (re-run)
+  Run 2 stats: inserted=0, updated=17, failed=0, kb_events_ingested=2
+
+Live API checks (after final seed):
+  GET https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/api/v2/events?limit=10
+       200 JSON; upcoming events count: 2 (e.g. Bhakti Kirtan Retreat 2026; Swami Mukundananda at UNT)
+  GET https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/api/v2/events/today
+       {"events":[]} on this date (no events scheduled that calendar day)
+
+PS: WhatsApp / full bot path not verified on this run; only HTTP events API checked.
+
+Committed JSON scrape file: no (gitignored). This file is the required text summary only.
