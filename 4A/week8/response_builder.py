@@ -10,6 +10,7 @@ build_response(classified_intent: dict, session_context: dict) -> str
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -19,6 +20,7 @@ from api_client import (
     EventAPIClient,
 )
 
+logger = logging.getLogger("response_builder")
 
 WHATSAPP_CHAR_LIMIT = 4096
 MISSING_FIELD_TEXT = "Not listed on the event page"
@@ -27,23 +29,7 @@ DEFAULT_SEARCH_LIMIT = 5
 
 
 def build_response(classified_intent: dict, session_context: dict) -> str:
-    """Build the final WhatsApp response for the user.
-
-    Parameters
-    ----------
-    classified_intent:
-        Expected to contain the detected intent and any extracted entities such as
-        query text, event_id, or flags like today/recurring.
-
-    session_context:
-        Conversation state such as selected_event_id or an already constructed
-        EventAPIClient under session_context["api_client"].
-
-    Returns
-    -------
-    str
-        WhatsApp-safe response text.
-    """
+    """Build the final WhatsApp response for the user."""
     classified_intent = classified_intent or {}
     session_context = session_context or {}
 
@@ -81,12 +67,14 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
 
         return _truncate_whatsapp(_build_event_list_response(client, intent="event_list", query=query))
 
-    except APIClientError:
+    except APIClientError as e:
+        logger.error(f"APIClientError in builder: {e}")
         return (
             "I could not retrieve event information right now. "
             "Please try again in a moment."
         )
-    except Exception:
+    except Exception as e:
+        logger.error(f"Unexpected error in builder: {e}")
         return (
             "I ran into an issue while building the event response. "
             "Please try again."
