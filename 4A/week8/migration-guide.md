@@ -1,10 +1,11 @@
-# 📄 File: 4A/week6/migration-guide.md
-This document provides the literal "Before and After" code and data structures.
-# Migration Guide (Week 5 → Week 6)
+# 📄 4A/week6/migration-guide.md
 
-**Objective**: Successfully migrate the backend ingestion layer from Meta-native JSON to the Twilio Unified Protocol.
-1. **Payload Transformation**
-The primary breaking change is the shift in Content-Type and key naming conventions.
+# Migration Guide (Week 5 → Week 8)
+
+## 📌 Objective
+
+Successfully migrate the backend ingestion layer from **Meta-native JSON** to the **Twilio WhatsApp Unified Protocol**, while ensuring reliability, monitoring, and recovery mechanisms are in place.
+
 ---
 
 ## 🔄 Incoming Message Webhook
@@ -23,7 +24,7 @@ Content-Type: application/json
 
 ---
 
-### 🔹 After (Week 6 - Twilio WhatsApp Format)
+### 🔹 After (Week 8 - Twilio WhatsApp Format)
 
 ```http
 POST /v2/webhook/whatsapp
@@ -34,12 +35,12 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 
 ### ✅ Key Changes
 
-* Payload changed from JSON → `x-www-form-urlencoded`
-* Uses Twilio fields:
+* Payload changed from **JSON → form-urlencoded**
+* Introduced Twilio standard fields:
 
   * `MessageSid` → unique message ID
-  * `From` → user WhatsApp number
-  * `Body` → user message
+  * `From` → WhatsApp user number
+  * `Body` → message content
   * `ProfileName` → sender name
 * Endpoint updated to `/v2/webhook/whatsapp`
 
@@ -57,7 +58,7 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 
 ---
 
-### 🔹 After (Week 6 - Twilio TwiML)
+### 🔹 After (Week 8 - Twilio TwiML)
 
 ```xml
 <Response>
@@ -68,13 +69,13 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 ### ✅ Key Changes
 
 * Response format changed to **TwiML (XML)**
-* Required by Twilio for WhatsApp replies
+* Required for Twilio WhatsApp replies
 
 ---
 
 ## 🔄 Session Handling Update
 
-### Before (Week 5)
+### 🔹 Before (Week 5)
 
 ```json
 {
@@ -83,7 +84,7 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 }
 ```
 
-### After (Week 6)
+### 🔹 After (Week 8)
 
 ```json
 {
@@ -96,7 +97,7 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 ### ✅ Key Changes
 
 * Phone number used as session identifier
-* Channel awareness added
+* Added channel awareness (`whatsapp`)
 
 ---
 
@@ -112,101 +113,137 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 
 ---
 
+# 🗄️ Database Failure Recovery Process
 
-## Database Failure Recovery Process
+## 🚨 Scenario
 
-### Scenario: Database is Down or Data is Lost
+Database is down or data is lost.
 
-###  Recovery Objectives
-- **RTO (Recovery Time Objective)**: ≤ 30 minutes (maximum acceptable downtime)
-- **RPO (Recovery Point Objective)**: ≤ 5 minutes (maximum acceptable data loss)
+## 📊 Recovery Objectives
 
-###  Disaster Recovery Architecture (High-Level)
-- Primary Database (Production)
-- Automated Backups (Hourly/Daily Snapshots)
-- Read Replica / Standby Database (Failover ready)
-- Backup Storage (Cloud storage like S3)
+* **RTO (Recovery Time Objective):** ≤ 30 minutes
+* **RPO (Recovery Point Objective):** ≤ 5 minutes
+
+## 🏗️ Disaster Recovery Architecture
+
+* Primary database (production)
+* Automated backups (hourly/daily snapshots)
+* Read replica / standby database
+* Cloud backup storage (e.g., S3)
 
 ---
 
-### Step-by-Step Recovery Plan
+## 🔁 Step-by-Step Recovery Plan
 
 1. **Detect the Issue**
-   - Monitor alerts (DB connection failures, 500 errors)
-   - Confirm database is unreachable or corrupted
+
+   * Monitor alerts (DB failures, 500 errors)
 
 2. **Switch to Safe Mode**
-   - Temporarily disable write operations
-   - Serve fallback/static responses if applicable
 
-3. **Failover (if replica available)**
-   - Switch to read replica / standby DB
-   - Update `DATABASE_URL` to replica endpoint
+   * Disable write operations
+   * Serve fallback responses
 
-4. **Check Database Connectivity**
-   - Verify `DATABASE_URL`
-   - Check network/firewall rules
-   - Restart database service if needed
+3. **Failover**
+
+   * Switch to replica database
+   * Update `DATABASE_URL`
+
+4. **Check Connectivity**
+
+   * Verify database connection
+   * Restart DB if required
 
 5. **Restore from Backup**
-   - Identify latest valid backup (based on RPO ≤ 5 min)
-   - Restore database
-   ```bash
-   pg_restore -d db_name backup_file.dump
-   ```
+
+```bash
+pg_restore -d db_name backup_file.dump
+```
 
 6. **Run Migrations**
-   - Apply latest schema changes
-   ```bash
-   alembic upgrade head
-   ```
 
-7. **Validate Data Integrity**
-   - Check critical tables (User, Conversation)
-   - Validate schema consistency
+```bash
+alembic upgrade head
+```
+
+7. **Validate Data**
+
+   * Check User and Conversation tables
 
 8. **Reconnect Application**
-   - Restart backend services
-   - Test API endpoints and webhook flow
 
-9. **Monitor System Stability**
-   - Track latency, error rates
-   - Confirm Twilio messages are processed correctly
+   * Restart backend services
+   * Test APIs and webhook flow
+
+9. **Monitor Stability**
+
+   * Track latency and error rates
 
 10. **Post-Incident Review**
-   - Identify root cause
-   - Improve backup/monitoring strategy
 
-🤖 Bot Layer Reliability & Recovery Process
+* Identify root cause
+* Improve monitoring and backup strategy
 
-In case the backend API or database is unavailable, the bot maintains availability using graceful degradation.
+---
 
-RTO: ≤ 30 min | RPO: ≤ 5 min
+# 🤖 Bot Layer Reliability & Recovery Process
 
-🔌 Circuit Breaking
-api_client.py uses 30s timeout
-Raises APIConnectionError if backend fails
-🛡️ Internal Safe Mode
-main.py catches all API errors
-Prevents crash and triggers fallback response
-📚 Local Knowledge Activation
-For recurring schedules:
-Bypass API
-Use recurring_handler.py
-Ensures temple timings remain available
-⚠️ Static Fallback
+In case the backend API or database is unavailable, the bot maintains availability using **graceful degradation**.
+
+**RTO:** ≤ 30 minutes
+**RPO:** ≤ 5 minutes
+
+---
+
+## 🔌 Circuit Breaking
+
+* `api_client.py` uses a **30-second timeout**
+* Raises `APIConnectionError` if backend fails
+
+---
+
+## 🛡️ Internal Safe Mode
+
+* `main.py` catches all API errors
+* Prevents crashes
+* Triggers fallback response builder
+
+---
+
+## 📚 Local Knowledge Activation
+
+For recurring schedule queries:
+
+* Bypass API calls
+* Use `recurring_handler.py`
+* Ensures temple timings remain available
+
+---
+
+## ⚠️ Static Fallback
 
 If search fails:
 
-"I'm having trouble reaching the temple records right now, but you can usually find our daily schedule at [URL]."
-❤️ Health Monitoring
-/health endpoint exposed
-Enables uptime tracking independent of backend
-✅ Summary
+```
+"I’m having trouble reaching the temple records right now, but you can usually find our daily schedule at [URL]."
+```
+
+---
+
+## ❤️ Health Monitoring
+
+* `/health` endpoint exposed
+* Enables uptime tracking independent of backend
+
+---
+
+## ✅ Summary
 
 This migration:
 
-Transitions system to Twilio WhatsApp protocol
-Improves scalability and real-world integration
-Adds resilience via DB recovery + bot fallback
-Ensures system remains functional even during failures
+* Transitions system to **Twilio WhatsApp protocol**
+* Improves **scalability and real-world integration**
+* Adds **resilience via database recovery and bot fallback mechanisms**
+* Ensures system remains functional even during failures
+
+---
