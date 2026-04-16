@@ -330,15 +330,80 @@ This contract specifies the retrieval logic for the JKYog Knowledge Base events.
 - Escalation → triggered when needed  
 
 ---
+---
 
-## 4. System Reliability (Stress Testing)
+## 4. System Reliability & Recovery Plan (Updated)
 
-The platform is validated via `stress_test_db_health.py`.
+This section supersedes the earlier reliability notes and reflects the **final validated system behavior** aligned with production readiness and ITM disaster recovery standards.
 
-- Concurrency Target: 10 requests  
-- Burst Capacity: 50 concurrent  
-- Sustained Load: 3 rounds testing  
+### Reliability Metrics
+- Burst Capacity: Verified for 50-request spikes  
+- Concurrency: Validated for 10 simultaneous users  
+- SLA (Search): Target < 800ms | Max (p95) 1200ms  
 
+---
+
+### Database Failure Recovery Process
+
+**1. Detection**  
+- Automated triggers detect:
+  - `503 Service Unavailable`  
+  - `DB Connection Refused`  
+
+**2. Graceful Degradation**  
+- Bot layer handles API failures and returns fallback response:  
+  > "I could not retrieve event info right now. Please try again soon."
+
+**3. Failover Strategy**  
+- Update `DATABASE_URL` to:
+  - Read Replica  
+  - Standby instance  
+
+**4. Point-in-Time Recovery**  
+- Restore from latest snapshot:
+```bash
+  pg_restore -d jkyog_prod backup_file.dump
+
+## 5. Post-Recovery Validation
+ 
+After recovery, the system must be validated to ensure full operational integrity.
+ 
+### Migration Check
+```bash
+alembic upgrade head
+
+```http
+GET /api/v2/events/today
+
+## 6. Architectural Note: Hybrid Response Pattern (Updated)
+
+This section supersedes earlier TwiML vs JSON discussions and defines the **final agreed architecture**.
+
+---
+
+### Internal Communication
+
+All internal services communicate using **JSON payloads**, which supports:
+
+- Structured event data  
+- Flexible response building  
+- Easier debugging and scalability  
+
+---
+
+### External Communication (Twilio)
+
+The system entry point (`main.py`) performs the final transformation:
+
+- Converts JSON responses → TwiML (XML)  
+- Ensures compatibility with Twilio’s WhatsApp protocol  
+
+---
+
+### Final Flow
+
+```text id="kqsm0u"
+Internal Services → JSON → Response Builder → main.py → TwiML → WhatsApp
 ---
 
 ## 🎯 Final Summary
@@ -348,3 +413,17 @@ This API enables the bot to answer:
 - “What’s happening tonight?”  
 - “When is Hanuman Jayanti?”  
 - “Is there parking for Ram Navami?”
+
+## 📌 Superseding Note
+
+The above sections represent the **final, production-aligned updates** and override earlier assumptions regarding:
+
+- System reliability  
+- Error handling  
+- TwiML vs JSON architecture  
+
+This ensures consistency across:
+
+- API contract  
+- Backend implementation  
+- WhatsApp delivery layer  
