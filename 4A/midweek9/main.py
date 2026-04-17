@@ -23,25 +23,29 @@ app = FastAPI(title="JKYog WhatsApp Bot")
 
 def bridge_intent_to_builder(classifier_output: dict, message: str) -> dict:
     msg = message.lower()
+    intent = classifier_output.get("intent", "")
 
-    # Handle the Demo "No Results" Trap ("Is there anything at 3 AM tonight?")
+    
+    if intent in ["clarification_needed", "ambiguous", "unknown"]:
+        return classifier_output
+
+    
     if "3 am" in msg or "midnight" in msg:
-        return {"intent": "no_results_check", "query": "3 AM events"}
+        classifier_output["intent"] = "no_results_check"
+        classifier_output["query"] = "3 AM events"
+        return classifier_output
 
-    if "weekend" in msg or "today" in msg or "tonight" in msg:
-        return {"intent": "event_list", "entities": {"timeframe": "upcoming"}}
     
-    if any(t in msg for t in ["am", "pm", "morning", "evening", "night"]):
-        return {"intent": "time_filtered_events"}
-    
-    if "satsang" in msg:
-        return {"intent": "recurring_events"}
-    
-    if "hanuman" in msg:
-        return {"intent": "single_event_detail", "event_name": "hanuman jayanti", "query": "hanuman jayanti"}
-    
-    if any(k in msg for k in ["parking", "food", "directions"]):
-        return {"intent": "logistics_parking"}
+    if "weekend" in msg and "darshan" not in msg:
+        classifier_output["intent"] = "event_list"
+        classifier_output["query"] = "upcoming events"
+    elif "satsang" in msg or "aarti" in msg or "darshan" in msg:
+        classifier_output["intent"] = "recurring_events"
+    elif "hanuman" in msg:
+        classifier_output["intent"] = "single_event_detail"
+        classifier_output["query"] = "hanuman jayanti"
+    elif any(k in msg for k in ["parking", "food", "directions"]):
+        classifier_output["intent"] = "logistics_parking"
 
     return classifier_output
 
@@ -59,12 +63,10 @@ def send_whatsapp_message(to: str, body: str) -> str:
 def process_message_background(body_text: str, sender_phone: str) -> None:
     start_time = time.monotonic()
     
-    # 1. Handle Greetings immediately to avoid AI confusion
     if body_text.lower().strip() in ["hi", "hello", "hey", "namaste", "start"]:
         send_whatsapp_message(to=sender_phone, body="Namaste! 🙏 Welcome to the JKYog Temple bot. You can ask me about upcoming events, parking info, or specific schedules like Sunday Satsang.")
         return
 
-    # 2. AI Classification
     try:
         raw_classification = classify(body_text)
         logger.info(f"AI CLASSIFICATION: {raw_classification}")
@@ -72,35 +74,32 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         logger.error(f"Classification Failed: {e}", exc_info=True)
         raw_classification = {"intent": "unknown", "entities": {}, "confidence": 0.0}
 
-    # 3. Bridge Logic
     final_intent_data = bridge_intent_to_builder(raw_classification, body_text)
     logger.info(f"MAPPED INTENT: {final_intent_data}")
 
-    # 4. Build Response using Team 4B API
-    try:
-        context = {
-            "phone_number": sender_phone,
-            "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
-            "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN"),
-        }
-        
-        reply_text = build_response(final_intent_data, context)
+    # 🚨 THE FIX: Intercept AI confusion to force the fallback message
+    if final_intent_data.get("intent") in ["clarification_needed", "ambiguous", "unknown"]:
+        reply_text = "" # Leaving this blank forces the safety net below
+    else:
+        try:
+            context = {
+                "phone_number": sender_phone,
+                "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
+                "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN"),
+            }
+            reply_text = build_response(final_intent_data, context)
+        except Exception as e:
+            logger.error(f"Response Builder Failed: {e}", exc_info=True)
+            reply_text = ""
 
-        
-
-    except Exception as e:
-        logger.error(f"Response Builder Failed: {e}", exc_info=True)
-        reply_text = "I'm having trouble understanding that right now. Try: 'What events are happening this weekend?'"
-
-    # 5. Final Fallback
+    # The Graceful Fallback Safety Net
     if not reply_text or len(reply_text.strip()) == 0:
         reply_text = "I'm having trouble understanding that right now. Try: 'What events are happening this weekend?'"
 
-    # 6. Send Message
     try:
         send_whatsapp_message(to=sender_phone, body=reply_text)
         elapsed = int((time.monotonic() - start_time) * 1000)
-        logger.info(f"Message processed and sent successfully in {elapsed}ms to {sender_phone}")
+        logger.info(f"Message sent in {elapsed}ms to {sender_phone}")
     except Exception as e:
         logger.error(f"Failed to send Twilio message: {e}", exc_info=True)
 
