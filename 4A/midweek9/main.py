@@ -7,7 +7,7 @@ from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 from dotenv import load_dotenv
 
-# Change this back in main.py:
+
 from intent_classifier import classify
 from response_builder import build_response
 
@@ -86,7 +86,7 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         
         reply_text = build_response(final_intent_data, context)
 
-        # Removed the hardcoded overrides here so the API can actually work!
+        
 
     except Exception as e:
         logger.error(f"Response Builder Failed: {e}", exc_info=True)
