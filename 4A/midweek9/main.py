@@ -38,9 +38,12 @@ def bridge_intent_to_builder(classifier_output: dict, message: str) -> dict:
     
     if "weekend" in msg and "darshan" not in msg:
         classifier_output["intent"] = "event_list"
-        classifier_output["query"] = "upcoming events"
+        classifier_output["query"] = None  
     elif "satsang" in msg or "aarti" in msg or "darshan" in msg:
         classifier_output["intent"] = "recurring_events"
+        
+        if "satsang" in msg:
+            classifier_output["query"] = "satsang"
     elif "hanuman" in msg:
         classifier_output["intent"] = "single_event_detail"
         classifier_output["query"] = "hanuman jayanti"
