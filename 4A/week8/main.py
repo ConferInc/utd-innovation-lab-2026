@@ -1,12 +1,14 @@
 import os
 import logging
 import time
+import uuid
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 from dotenv import load_dotenv
 
+# Clean imports (Task 3 completed)
 from intent_classifier import classify
 from response_builder import build_response
 
@@ -20,26 +22,11 @@ load_dotenv()
 
 app = FastAPI(title="JKYog WhatsApp Bot")
 
-def bridge_intent_to_builder(classifier_output: dict, message: str) -> dict:
-    msg = message.lower()
 
-    if "weekend" in msg or "today" in msg or "tonight" in msg:
-        return {"intent": "event_list", "entities": {"timeframe": "upcoming"}}
-    if any(t in msg for t in ["am", "pm", "morning", "evening", "night"]):
-        return {"intent": "time_filtered_events"}
-    if "satsang" in msg:
-        return {"intent": "recurring_events"}
-    if "hanuman" in msg:
-        return {"intent": "single_event_detail", "entities": {"event_name": "hanuman jayanti"}}
-    if any(k in msg for k in ["parking", "food", "directions"]):
-        return {"intent": "logistics_parking"}
-
-    return classifier_output
+ACTIVE_SESSIONS = {}
 
 def send_whatsapp_message(to: str, body: str) -> str:
     client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
-    
-    
     formatted_to = to if to.startswith("whatsapp:") else f"whatsapp:{to if to.startswith('+') else '+' + to}"
     
     msg = client.messages.create(
@@ -52,6 +39,12 @@ def send_whatsapp_message(to: str, body: str) -> str:
 def process_message_background(body_text: str, sender_phone: str) -> None:
     start_time = time.monotonic()
     
+    # Simple greeting bypass
+    if body_text.lower().strip() in ["hi", "hello", "hey", "namaste", "start"]:
+        send_whatsapp_message(to=sender_phone, body="Namaste! 🙏 Welcome to the JKYog Temple bot. You can ask me about upcoming events, parking info, or specific schedules like Sunday Satsang.")
+        return
+
+    # 1. AI Classification
     try:
         raw_classification = classify(body_text)
         logger.info(f"AI CLASSIFICATION: {raw_classification}")
@@ -59,31 +52,40 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         logger.error(f"Classification Failed: {e}", exc_info=True)
         raw_classification = {"intent": "unknown", "entities": {}, "confidence": 0.0}
 
-    final_intent_data = bridge_intent_to_builder(raw_classification, body_text)
-    logger.info(f"MAPPED INTENT: {final_intent_data}")
-
-    try:
-        context = {
-            "phone_number": sender_phone,
-            "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
-            "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN"),
+    # 2. WEEK 10 TASK 5: Session Context Management
+    if sender_phone not in ACTIVE_SESSIONS:
+        ACTIVE_SESSIONS[sender_phone] = {
+            "user_id": str(uuid.uuid4()),
+            "conversation_id": str(uuid.uuid4()),
+            "last_intent": None,
+            "selected_event_id": None
         }
-        
-        reply_text = build_response(final_intent_data, context)
 
-        msg = body_text.lower()
-        if "satsang" in msg and "time" in msg:
-            reply_text = "Sunday Satsang is typically held in the morning. Please check the temple for exact timings."
-        if "hanuman" in msg:
-            reply_text = "Hanuman Jayanti is a special celebration honoring Lord Hanuman. Please check temple announcements for event details."
+    session_data = ACTIVE_SESSIONS[sender_phone]
+    session_data["last_intent"] = raw_classification.get("intent")
+    
+    context = {
+        "phone_number": sender_phone,
+        "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
+        "api_bearer_token": os.getenv("EVENTS_API_BEARER_TOKEN"),
+        "user_id": session_data["user_id"],
+        "conversation_id": session_data["conversation_id"],
+        "last_intent": session_data["last_intent"],
+        "selected_event_id": session_data["selected_event_id"]
+    }
 
+    # 3. WEEK 10 TASKS 1 & 2: No Hardcoded logic
+    try:
+        reply_text = build_response(raw_classification, context)
     except Exception as e:
         logger.error(f"Response Builder Failed: {e}", exc_info=True)
-        reply_text = "Namaste! I'm having trouble fetching that right now. Please try again in a moment."
+        reply_text = ""
 
-    if not reply_text or len(reply_text.strip()) == 0:
-        reply_text = "I'm not sure I understand. Try asking about 'parking', 'today's events', or 'satsang schedule'."
+    # 4. Graceful Fallback Safety Net
+    if not reply_text or len(reply_text.strip()) == 0 or raw_classification.get("intent") in ["clarification_needed", "ambiguous", "unknown"]:
+        reply_text = "I'm having trouble understanding that right now. Try: 'What events are happening this weekend?'"
 
+    # 5. Send Message
     try:
         send_whatsapp_message(to=sender_phone, body=reply_text)
         elapsed = int((time.monotonic() - start_time) * 1000)
@@ -91,7 +93,7 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
     except Exception as e:
         logger.error(f"Failed to send Twilio message: {e}", exc_info=True)
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 async def root():
     return {
         "status": "JKYog Bot is online",
