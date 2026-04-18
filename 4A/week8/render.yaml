@@ -19,3 +19,5 @@ services:
         sync: false
       - key: GOOGLE_API_KEY
         sync: false
+      - key: EVENTS_API_BEARER_TOKEN
+        sync: false
