@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import Counter
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -23,6 +24,44 @@ def _dedup_key(payload: Dict[str, Any]) -> Tuple[str, str, str]:
     return (name, start, location)
 
 
+def _compute_metrics(
+    *,
+    combined: List[Dict[str, Any]],
+    validated: List[Dict[str, Any]],
+    deduped: List[Dict[str, Any]],
+    skipped_invalid: int,
+    errors: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    raw_count_by_source_site = Counter(
+        str(event.get("source_site") or "unknown") for event in combined
+    )
+    validated_count_by_source_site = Counter(
+        str(event.get("source_site") or "unknown") for event in validated
+    )
+    deduped_count_by_source_site = Counter(
+        str(event.get("source_site") or "unknown") for event in deduped
+    )
+    passed_category_not_other = sum(
+        1 for event in validated if str(event.get("category") or "other").strip().lower() != "other"
+    )
+    duplicate_count = len(validated) - len(deduped)
+    scraper_errors_logged = sum(
+        1 for error in errors if str(error.get("stage") or "").strip().lower() != "missing_or_invalid_start_datetime"
+    )
+    return {
+        "total_scraped": len(combined),
+        "passed_start_datetime_parse": len(validated),
+        "failed_start_datetime_parse": skipped_invalid,
+        "passed_category_not_other": passed_category_not_other,
+        "duplicate_count": duplicate_count,
+        "deduped_event_count": len(deduped),
+        "raw_count_by_source_site": dict(raw_count_by_source_site),
+        "validated_count_by_source_site": dict(validated_count_by_source_site),
+        "deduped_count_by_source_site": dict(deduped_count_by_source_site),
+        "scraper_errors_logged": scraper_errors_logged,
+    }
+
+
 def scrape_all_events(
     *,
     temple_homepage_url: str = DEFAULT_TEMPLE_HOMEPAGE_URL,
@@ -37,7 +76,19 @@ def scrape_all_events(
         "scraped_at": "...Z",
         "events": [ {event_payload}, ... ],
         "errors": [ {source, stage, url, error}, ... ],
-        "skipped_invalid_datetime": int
+        "skipped_invalid_datetime": int,
+        "metrics": {
+          "total_scraped": int,
+          "passed_start_datetime_parse": int,
+          "failed_start_datetime_parse": int,
+          "passed_category_not_other": int,
+          "duplicate_count": int,
+          "deduped_event_count": int,
+          "raw_count_by_source_site": {source_site: int},
+          "validated_count_by_source_site": {source_site: int},
+          "deduped_count_by_source_site": {source_site: int},
+          "scraper_errors_logged": int
+        }
       }
     """
 
@@ -78,11 +129,21 @@ def scrape_all_events(
             seen.add(k)
             deduped.append(event)
 
+        metrics = _compute_metrics(
+            combined=combined,
+            validated=validated,
+            deduped=deduped,
+            skipped_invalid=skipped_invalid,
+            errors=errors,
+        )
+        logger.info("scrape quality metrics: %s", metrics)
+
         return {
             "scraped_at": _now_iso_z(),
             "events": deduped,
             "errors": errors,
             "skipped_invalid_datetime": skipped_invalid,
+            "metrics": metrics,
         }
     finally:
         client.close()
