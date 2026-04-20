@@ -48,10 +48,18 @@ def _compute_metrics(
     scraper_errors_logged = sum(
         1 for error in errors if str(error.get("stage") or "").strip().lower() != "missing_or_invalid_start_datetime"
     )
+    total_scraped = len(combined)
+    # Observability signal for the data-quality funnel (Week 10): share of scraped
+    # cards whose start_datetime survived parsing. Complements raw counts so the
+    # failure rate is obvious at a glance without division on the consumer side.
+    start_datetime_parse_rate = (
+        round(len(validated) / total_scraped, 4) if total_scraped else 0.0
+    )
     return {
-        "total_scraped": len(combined),
+        "total_scraped": total_scraped,
         "passed_start_datetime_parse": len(validated),
         "failed_start_datetime_parse": skipped_invalid,
+        "start_datetime_parse_rate": start_datetime_parse_rate,
         "passed_category_not_other": passed_category_not_other,
         "duplicate_count": duplicate_count,
         "deduped_event_count": len(deduped),
@@ -81,6 +89,7 @@ def scrape_all_events(
           "total_scraped": int,
           "passed_start_datetime_parse": int,
           "failed_start_datetime_parse": int,
+          "start_datetime_parse_rate": float,  # validated / total, in [0.0, 1.0]
           "passed_category_not_other": int,
           "duplicate_count": int,
           "deduped_event_count": int,

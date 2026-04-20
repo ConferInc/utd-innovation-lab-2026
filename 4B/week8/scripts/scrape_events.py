@@ -57,10 +57,12 @@ def main() -> None:
     print(f"Skipped (missing/invalid start_datetime): {n_skipped}")
     print(f"Scraper errors logged: {n_scraper_errors}")
     if metrics:
+        parse_rate_pct = float(metrics.get("start_datetime_parse_rate", 0.0)) * 100.0
         print(
             "Scrape quality: "
             f"total={int(metrics.get('total_scraped', 0))} "
             f"parsed_dt={int(metrics.get('passed_start_datetime_parse', 0))} "
+            f"parse_rate={parse_rate_pct:.1f}% "
             f"category_not_other={int(metrics.get('passed_category_not_other', 0))} "
             f"duplicates={int(metrics.get('duplicate_count', 0))} "
             f"deduped={int(metrics.get('deduped_event_count', 0))}"
