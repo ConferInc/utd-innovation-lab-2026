@@ -111,6 +111,96 @@ def test_jkyog_malformed_calendar_returns_no_events_without_uncaught_exception()
     assert result.events == []
 
 
+def test_jkyog_skips_placeholder_loading_title() -> None:
+    """Pre-hydration skeleton cards titled 'Loading Event Details' must not leak into output.
+
+    Chakradhar's Week 10 diagnostic caught one such row; we log it as a
+    ``stage=placeholder_title`` error instead of shipping a useless event.
+    """
+    html = """
+    <html><body><main>
+      <div class="w-dyn-list">
+        <div class="w-dyn-item">
+          <a href="https://www.jkyog.org/placeholder-event">
+            <h3>Loading Event Details</h3>
+            Allen, TX 75013 — Radha Krishna Temple of Dallas, 1450 North Watters Road
+          </a>
+        </div>
+      </div>
+    </main></body></html>
+    """
+    client = MappingHttpClient({DEFAULT_JKYOG_CALENDAR_URL.rstrip("/"): html})
+    result = scrape_jkyog_upcoming_events(
+        client=client,
+        calendar_url=DEFAULT_JKYOG_CALENDAR_URL,
+        extra_page_urls=(),
+        max_events=5,
+    )
+    assert result.events == []
+    assert any(e.get("stage") == "placeholder_title" for e in result.errors)
+
+
+def test_temple_scraper_skips_placeholder_detail_page() -> None:
+    """Temple detail pages whose title resolves to 'Loading...' must be skipped."""
+    home = (
+        '<html><body><div class="carousel">'
+        '<a href="/event/fixture-placeholder">x</a>'
+        "</div></body></html>"
+    )
+    placeholder_detail = (
+        "<html><body><h1>Loading Event Details</h1>"
+        "<article><p>April 10, 2026 6:00 PM Central</p></article>"
+        "</body></html>"
+    )
+    detail_url = "https://www.radhakrishnatemple.net/event/fixture-placeholder"
+    client = MappingHttpClient(
+        {
+            DEFAULT_TEMPLE_HOMEPAGE_URL.rstrip("/"): home,
+            detail_url: placeholder_detail,
+        }
+    )
+    result = scrape_radhakrishnatemple(
+        client=client,
+        homepage_url=DEFAULT_TEMPLE_HOMEPAGE_URL,
+        supplemental_event_urls=(),
+        max_events=3,
+    )
+    assert result.events == []
+    assert any(e.get("stage") == "placeholder_title" for e in result.errors)
+
+
+def test_temple_multi_day_range_populates_end_datetime() -> None:
+    """``Mar 26-29, 2026`` style ranges must produce both start and end datetimes."""
+    home = (
+        '<html><body><div class="carousel">'
+        '<a href="/event/fixture-navratri">x</a>'
+        "</div></body></html>"
+    )
+    multi_day_detail = (
+        "<html><body>"
+        "<h1>Chaitra Navratri</h1>"
+        "<article><p>Chaitra Navratri Mar 26-29, 2026 at the temple.</p></article>"
+        "</body></html>"
+    )
+    detail_url = "https://www.radhakrishnatemple.net/event/fixture-navratri"
+    client = MappingHttpClient(
+        {
+            DEFAULT_TEMPLE_HOMEPAGE_URL.rstrip("/"): home,
+            detail_url: multi_day_detail,
+        }
+    )
+    result = scrape_radhakrishnatemple(
+        client=client,
+        homepage_url=DEFAULT_TEMPLE_HOMEPAGE_URL,
+        supplemental_event_urls=(),
+        max_events=3,
+    )
+    assert len(result.events) == 1
+    event = result.events[0]
+    assert is_valid_storage_datetime(event.get("start_datetime"))
+    assert is_valid_storage_datetime(event.get("end_datetime"))
+
+
 def test_fixture_html_temple_and_jkyog_combine_with_valid_datetimes() -> None:
     """Subodh tests: both scrapers on shared mock client (no changes to ``scrape_all``)."""
     temple_home = _load("temple_home.html")
