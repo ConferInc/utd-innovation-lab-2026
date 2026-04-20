@@ -7,6 +7,50 @@ fetched HTML and are therefore skipped without raising an error.
 When debugging empty results, compare against the live site in a browser with
 JS enabled; if content only appears after scripts run, plan a Playwright or
 Selenium-based fetch before expanding parsers here.
+
+Scraped event payload schema
+----------------------------
+Each dict appended to ``JkyogScrapeResult.events`` (and later bundled into
+``scraped_events.json`` by ``events.scrapers.scrape_all.scrape_all_events``)
+uses exactly the keys below. The downstream Pydantic ``EventPayload`` /
+``events.storage`` pipeline enforces these invariants; producing a value that
+violates them will cause the row to be rejected at validation time.
+
+Guaranteed (never None):
+    name: str                    - Human title; placeholder titles (``Loading
+                                   Event Details``, ``Untitled`` ...) are
+                                   filtered out before emission.
+    location_name: str           - Always ``"JKYog Radha Krishna Temple"``.
+    source_url: str              - Either the event detail URL or the page URL
+                                   the card was scraped from.
+    source_site: str             - Always ``"jkyog"``.
+    is_recurring: bool           - Always ``False`` for scraper output; the
+                                   recurring ingester handles periodic programs
+                                   separately.
+    category: Category literal   - One of ``festival | retreat | satsang |
+                                   youth | class | workshop | health |
+                                   special_event | other`` (see
+                                   ``category_from_title.guess_event_category``).
+    sponsorship_tiers: list      - Always ``[]`` from the scraper; populated
+                                   downstream when known.
+    scraped_at: str              - ISO-8601 UTC with ``Z`` suffix.
+
+Nullable (may be ``None`` - downstream treats ``None`` as "unknown"):
+    description: Optional[str]
+    start_datetime: Optional[str] - ISO-8601; rows with ``None`` are dropped by
+                                    ``scrape_all_events`` (counted in
+                                    ``failed_start_datetime_parse``).
+    end_datetime: Optional[str]   - ISO-8601; populated for multi-day ranges
+                                    (``Mar 26-29, 2026``). ``None`` for
+                                    single-day events.
+    parking_notes: Optional[str]
+    food_info: Optional[str]
+    image_url: Optional[str]
+    notes: Optional[str]          - Full card text for debugging.
+
+Pydantic validation will reject null ``start_datetime``, unknown ``category``
+literals, and any field with the wrong type. See ``events.schemas`` for the
+authoritative contract.
 """
 
 from __future__ import annotations

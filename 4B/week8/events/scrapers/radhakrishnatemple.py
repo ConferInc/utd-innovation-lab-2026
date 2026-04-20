@@ -11,6 +11,49 @@ behind different URLs.
 Upgrade path for JS-heavy sites: drive a headless browser (Playwright or
 Selenium), wait for selectors, then parse the rendered HTML or intercept XHR
 JSON responses.
+
+Scraped event payload schema
+----------------------------
+Each dict appended to ``TempleScrapeResult.events`` (and later bundled into
+``scraped_events.json`` by ``events.scrapers.scrape_all.scrape_all_events``)
+uses exactly the keys below. Downstream Pydantic ``EventPayload`` and
+``events.storage`` enforce these invariants; values that break them cause the
+row to be rejected at validation time.
+
+Guaranteed (never None):
+    name: str                    - Extracted from the detail page title;
+                                   placeholder titles (``Loading Event
+                                   Details`` ...) are filtered before emission.
+    location_name: str           - Always ``"JKYog Radha Krishna Temple"``.
+    source_url: str              - The ``/event/<slug>`` detail page URL, or
+                                   a supplemental public event URL.
+    source_site: str             - Always ``"radhakrishnatemple"``.
+    is_recurring: bool           - Always ``False`` from the scraper.
+    category: Category literal   - One of ``festival | retreat | satsang |
+                                   youth | class | workshop | health |
+                                   special_event | other`` (see
+                                   ``category_from_title.guess_event_category``).
+    sponsorship_tiers: list      - Always ``[]`` from the scraper; populated
+                                   downstream when known.
+    scraped_at: str              - ISO-8601 UTC with ``Z`` suffix.
+
+Nullable (may be ``None``):
+    description: Optional[str]    - ``meta[name=description]`` or first
+                                    article paragraph.
+    start_datetime: Optional[str] - ISO-8601; rows with ``None`` are dropped by
+                                    ``scrape_all_events`` (counted in
+                                    ``failed_start_datetime_parse``).
+    end_datetime: Optional[str]   - ISO-8601; populated for multi-day ranges
+                                    parsed from phrases like ``Mar 26-29,
+                                    2026``. ``None`` for single-day events.
+    parking_notes: Optional[str]
+    food_info: Optional[str]
+    image_url: Optional[str]      - From ``meta[property=og:image]`` if present.
+    notes: Optional[str]          - Full ``.entry-content`` / ``article`` text.
+
+Pydantic validation will reject null ``start_datetime``, unknown ``category``
+literals, and any field with the wrong type. See ``events.schemas`` for the
+authoritative contract.
 """
 
 from __future__ import annotations
