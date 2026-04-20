@@ -34,6 +34,20 @@ DEFAULT_JKYOG_EXTRA_PAGE_URLS: Tuple[str, ...] = ("https://www.jkyog.org/yuva",)
 # Reject nodes whose plain text is huge (usually a section wrapper or document root).
 _MAX_CARD_TEXT_CHARS = 4000
 
+# Titles that indicate a skeleton/loading state or a page wrapper rather than a real event.
+# Cards that render these strings before JS hydration pollute the scrape output
+# (e.g. Chakradhar's Week 10 diagnostic caught one "Loading Event Details" row).
+_PLACEHOLDER_TITLE_RE = re.compile(
+    r"^\s*(loading|untitled|tbd|coming soon|event details?|no title)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder_title(title: str | None) -> bool:
+    if not title:
+        return True
+    return bool(_PLACEHOLDER_TITLE_RE.match(title))
+
 
 @dataclass(frozen=True)
 class JkyogScrapeResult:
@@ -228,7 +242,18 @@ def scrape_jkyog_upcoming_events(
                     title_node = card.select_one("h1, h2, h3, [class*='title']")
                     if title_node:
                         title = _clean_text(title_node.get_text(" ", strip=True))
-                title = title or _clean_text(rich_text.split("|")[0]) or "Untitled Event"
+                title = title or _clean_text(rich_text.split("|")[0])
+
+                if _is_placeholder_title(title):
+                    errors.append(
+                        {
+                            "source": "jkyog",
+                            "stage": "placeholder_title",
+                            "url": page_url,
+                            "error": f"Skipped card with placeholder title: {title!r}",
+                        }
+                    )
+                    continue
 
                 start_dt, end_dt = extract_event_datetimes(rich_text)
                 if not start_dt and link:

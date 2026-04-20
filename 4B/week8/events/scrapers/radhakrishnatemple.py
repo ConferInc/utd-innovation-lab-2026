@@ -58,6 +58,21 @@ class TempleScrapeResult:
     errors: List[Dict[str, Any]]
 
 
+# Titles that indicate a pre-hydration skeleton or a non-event landing page. Keeping a
+# single source of truth here so both homepage-discovered and supplemental detail pages
+# are filtered uniformly. Mirrors the jkyog.py regex - keep them in sync.
+_PLACEHOLDER_TITLE_RE = re.compile(
+    r"^\s*(loading|untitled|tbd|coming soon|event details?|no title)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder_title(title: Optional[str]) -> bool:
+    if not title:
+        return True
+    return bool(_PLACEHOLDER_TITLE_RE.match(title))
+
+
 def _now_iso_z() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -272,10 +287,13 @@ def _extract_event_links_from_homepage(home_html: str, base_url: str) -> List[st
     return deduped
 
 
-def _parse_detail_page(detail_html: str, *, url: str) -> Dict[str, Any]:
+def _parse_detail_page(detail_html: str, *, url: str) -> Optional[Dict[str, Any]]:
     soup = BeautifulSoup(detail_html, "lxml")
 
-    title = _extract_first(soup, ["h1", "h2", ".entry-title", "[class*='title']"]) or "Untitled Event"
+    title = _extract_first(soup, ["h1", "h2", ".entry-title", "[class*='title']"])
+    if _is_placeholder_title(title):
+        return None
+
     description = _extract_first(
         soup,
         [
@@ -371,6 +389,16 @@ def scrape_radhakrishnatemple(
         try:
             detail_html = client.get_text(url)
             payload = _parse_detail_page(detail_html, url=url)
+            if payload is None:
+                errors.append(
+                    {
+                        "source": "radhakrishnatemple",
+                        "stage": "placeholder_title",
+                        "url": url,
+                        "error": "Skipped detail page with placeholder/loading title",
+                    }
+                )
+                continue
             events.append(payload)
         except httpx.HTTPStatusError as exc:
             err = str(exc)
