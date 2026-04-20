@@ -13,7 +13,10 @@ stress_test_results_*
 stress_test_results_*.json
 stress_test_results_*.txt
 scraped_events.json
+scraped_events*.json
 data/scraped_events.json
+data/scraped_events*.json
+!data/scraped_events.fixture.json
 local_dev.db
 *.db
 .env.local
