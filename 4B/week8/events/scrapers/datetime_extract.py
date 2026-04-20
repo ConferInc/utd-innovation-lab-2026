@@ -105,6 +105,26 @@ _ORDINAL_DATE = re.compile(
 _HAS_TIME = re.compile(r"\b\d{1,2}:\d{2}\b")
 
 
+# Known US timezone abbreviations mapped to fixed UTC offsets in seconds.
+# dateutil emits UnknownTimezoneWarning otherwise and leaves ``tzinfo`` as None,
+# forcing fallback to ``_default_tz`` even when the source explicitly named CST/EST/PST.
+# ``"T"`` is mapped to ``None`` so the stray separator from strings like
+# ``"2026-04-04T14:30"`` is treated as literal text instead of an unknown zone.
+_TZINFOS: dict[str, int | None] = {
+    "UTC": 0,
+    "GMT": 0,
+    "EST": -5 * 3600,
+    "EDT": -4 * 3600,
+    "CST": -6 * 3600,
+    "CDT": -5 * 3600,
+    "MST": -7 * 3600,
+    "MDT": -6 * 3600,
+    "PST": -8 * 3600,
+    "PDT": -7 * 3600,
+    "T": None,
+}
+
+
 def _first_iso_substring(text: str) -> Optional[str]:
     m = _ISO_PATTERN.search(text)
     return m.group(0) if m else None
@@ -157,7 +177,7 @@ def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
                 break
         try:
             now_local = datetime.now(_default_tz())
-            dt = dateutil_parser.parse(snippet, fuzzy=True, default=now_local)
+            dt = dateutil_parser.parse(snippet, fuzzy=True, default=now_local, tzinfos=_TZINFOS)
             if 1990 <= dt.year <= 2100:
                 has_explicit_time = bool(_HAS_TIME.search(snippet))
                 if not has_explicit_time and dt.hour == 0 and dt.minute == 0 and dt.second == 0:
@@ -185,7 +205,7 @@ def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
     # 4) dateutil fuzzy on full text
     try:
         now_local = datetime.now(_default_tz())
-        dt = dateutil_parser.parse(text, fuzzy=True, default=now_local)
+        dt = dateutil_parser.parse(text, fuzzy=True, default=now_local, tzinfos=_TZINFOS)
         if dt.year < 1990 or dt.year > 2100:
             return None, None
         has_explicit_time = bool(_HAS_TIME.search(text))
