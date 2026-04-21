@@ -47,6 +47,7 @@ The app starts with no import errors
 The events endpoints return valid data
 WhatsApp webhook configuration is ready if using live Twilio
 Stripe webhook route is registered at /api/stripe/webhook
+Stripe webhook route matches main.py registration (/api/stripe/webhook)
 
 ## 4. Database Reseed / Refresh
 
@@ -119,6 +120,11 @@ The Stripe webhook route is registered at:
 If testing locally:
 ```bash
 http://127.0.0.1:8000/api/stripe/webhook
+```
+
+If deployed(Stripe Dashboard configuration):
+```bash
+https://<your-render-service>.onrender.com/api/stripe/webhook
 ```
 
 ## 8. Demo Message Prompts
