@@ -12,6 +12,11 @@ __pycache__/
 stress_test_results_*
 stress_test_results_*.json
 stress_test_results_*.txt
+stress_test*_results_*.json
+stress_test*_results_*.txt
+4B/week8/stress_test/*.json
+4B/week8/stress_test/*.txt
+!4B/week8/stress_test/*.py
 scraped_events.json
 data/scraped_events.json
 local_dev.db
