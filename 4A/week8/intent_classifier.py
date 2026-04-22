@@ -30,10 +30,36 @@ from entity_extractor import extract_entities
 # INTENT KEYWORD KB (Week 7 aligned)
 # -------------------------------
 INTENT_KEYWORDS = {
-    "logistics": {"parking", "where", "address", "location", "directions"},
-    "sponsorship": {"donate", "donation", "sponsor", "contribute"},
-    "discovery": {"events", "happening", "going", "any"},
-    "no_results_check": {"3am", "midnight"},
+    "time_based": {
+        "today", "tomorrow", "tonight", "weekend", "week", "month",
+        "date", "dates", "when", "schedule", "upcoming", "soon"
+    },
+    "event_specific": {
+        "event", "festival", "show", "details", "about",
+        "info", "information", "attend", "ticket", "tickets"
+    },
+    "recurring_schedule": {
+        "every", "weekly", "daily", "monthly", "recurring", "regular",
+        "ongoing", "program", "series", "class", "classes"
+    },
+    "logistics": {
+        "parking", "where", "address", "location", "directions", "venue",
+        "entry", "entrance", "map", "getting", "arrive"
+    },
+    "sponsorship": {
+        "donate", "donation", "sponsor", "sponsorship", "contribute",
+        "support", "partner", "fund", "funding", "money"
+    },
+    "discovery": {
+        "events", "event", "happening", "going", "any", "discover",
+        "find", "browse", "upcoming", "around"
+    },
+    "no_results_check": {
+        "3am", "midnight", "late night", "overnight", "after midnight", "before dawn"
+    },
+    "ambiguous": {
+        "help", "question", "something", "anything", "info", "information"
+    },
 }
 
 
@@ -56,17 +82,25 @@ def jaccard_similarity(set1: set, set2: set) -> float:
 # -------------------------------
 # ENTITY COVERAGE SCORE
 # -------------------------------
-def compute_entity_score(entities: dict) -> float:
-    entity_values = [
-        entities.get("timeframe"),
-        entities.get("event_name"),
-        entities.get("program_name"),
-    ]
+INTENT_ENTITY_FIELDS = {
+    "time_based": {"timeframe"},
+    "event_specific": {"event_name"},
+    "recurring_schedule": {"program_name"},
+    "logistics": {"event_name"},
+    "sponsorship": set(),
+    "discovery": set(),
+    "no_results_check": {"timeframe"},
+    "ambiguous": set(),
+}
 
-    extracted_count = sum(1 for val in entity_values if val)
-    total_possible = len(entity_values)
 
-    return extracted_count / total_possible if total_possible else 0.0
+def compute_entity_score(intent: str, entities: dict) -> float:
+    required_fields = INTENT_ENTITY_FIELDS.get(intent, set())
+    if not required_fields:
+        return 0.0
+
+    matched_fields = sum(1 for field in required_fields if entities.get(field))
+    return matched_fields / len(required_fields)
 
 
 # -------------------------------
@@ -75,14 +109,16 @@ def compute_entity_score(entities: dict) -> float:
 def compute_kb_score(message: str, intent: str, entities: dict) -> float:
     tokens = tokenize(message)
 
-    keyword_score = jaccard_similarity(
-        tokens, INTENT_KEYWORDS.get(intent, set())
-    )
+    intent_keywords = INTENT_KEYWORDS.get(intent, set())
+    keyword_score = jaccard_similarity(tokens, intent_keywords)
 
-    entity_score = compute_entity_score(entities)
+    entity_score = compute_entity_score(intent, entities)
 
-    # Fully data-driven (NO hardcoding)
-    confidence = (keyword_score + entity_score) / 2
+    scores = [keyword_score]
+    if INTENT_ENTITY_FIELDS.get(intent):
+        scores.append(entity_score)
+
+    confidence = sum(scores) / len(scores)
 
     return round(confidence, 2)
 
