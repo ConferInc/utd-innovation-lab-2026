@@ -1,4 +1,8 @@
+from schedule_data import SCHEDULE
+import json
 
+with open("4A/week8/schedule_exceptions.json") as f:
+    EXCEPTIONS = json.load(f)
 from datetime import datetime, timedelta, date
 from zoneinfo import ZoneInfo
 
