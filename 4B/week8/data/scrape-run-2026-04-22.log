@@ -1,0 +1,14 @@
+Week 8 scrape + seed run log (text summary) 
+Date: 2026-04-22
+Run by: Chakradhar Gummakonda
+Environment: Windows, cmd, repo 4B/week8, .venv active
+
+Scrape:
+  Command: python -m scripts.scrape_events
+  Output: data/scraped_events.json
+  Summary: 30 events written; 15 skipped (invalid/missing start_datetime).
+Scraper errors logged: 2
+Scrape quality: total=56 parsed_dt=41 parse_rate=73.2% category_not_other=38 duplicates=11 deduped=30
+Raw by source_site: jkyog=50, radhakrishnatemple=6
+Validated by source_site: jkyog=39, radhakrishnatemple=2
+Deduped by source_site: jkyog=28, radhakrishnatemple=2
