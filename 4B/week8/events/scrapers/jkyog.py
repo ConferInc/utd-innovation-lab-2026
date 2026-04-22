@@ -35,8 +35,6 @@ DEFAULT_JKYOG_EXTRA_PAGE_URLS: Tuple[str, ...] = ("https://www.jkyog.org/yuva",)
 # Reject nodes whose plain text is huge (usually a section wrapper or document root).
 _MAX_CARD_TEXT_CHARS = 4000
 
-<<<<<<< Updated upstream
-=======
 # Titles that indicate a skeleton/loading state or a page wrapper rather than a real event.
 # Cards that render these strings before JS hydration pollute the scrape output
 # (e.g. Chakradhar's Week 10 diagnostic caught one "Loading Event Details" row).
@@ -55,8 +53,6 @@ def _is_placeholder_title(title: str | None) -> bool:
     if not title:
         return True
     return bool(_PLACEHOLDER_TITLE_RE.match(title))
-
->>>>>>> Stashed changes
 
 @dataclass(frozen=True)
 class JkyogScrapeResult:
