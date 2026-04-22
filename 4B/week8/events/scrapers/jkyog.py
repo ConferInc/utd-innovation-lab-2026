@@ -7,54 +7,11 @@ fetched HTML and are therefore skipped without raising an error.
 When debugging empty results, compare against the live site in a browser with
 JS enabled; if content only appears after scripts run, plan a Playwright or
 Selenium-based fetch before expanding parsers here.
-
-Scraped event payload schema
-----------------------------
-Each dict appended to ``JkyogScrapeResult.events`` (and later bundled into
-``scraped_events.json`` by ``events.scrapers.scrape_all.scrape_all_events``)
-uses exactly the keys below. The downstream Pydantic ``EventPayload`` /
-``events.storage`` pipeline enforces these invariants; producing a value that
-violates them will cause the row to be rejected at validation time.
-
-Guaranteed (never None):
-    name: str                    - Human title; placeholder titles (``Loading
-                                   Event Details``, ``Untitled`` ...) are
-                                   filtered out before emission.
-    location_name: str           - Always ``"JKYog Radha Krishna Temple"``.
-    source_url: str              - Either the event detail URL or the page URL
-                                   the card was scraped from.
-    source_site: str             - Always ``"jkyog"``.
-    is_recurring: bool           - Always ``False`` for scraper output; the
-                                   recurring ingester handles periodic programs
-                                   separately.
-    category: Category literal   - One of ``festival | retreat | satsang |
-                                   youth | class | workshop | health |
-                                   special_event | other`` (see
-                                   ``category_from_title.guess_event_category``).
-    sponsorship_tiers: list      - Always ``[]`` from the scraper; populated
-                                   downstream when known.
-    scraped_at: str              - ISO-8601 UTC with ``Z`` suffix.
-
-Nullable (may be ``None`` - downstream treats ``None`` as "unknown"):
-    description: Optional[str]
-    start_datetime: Optional[str] - ISO-8601; rows with ``None`` are dropped by
-                                    ``scrape_all_events`` (counted in
-                                    ``failed_start_datetime_parse``).
-    end_datetime: Optional[str]   - ISO-8601; populated for multi-day ranges
-                                    (``Mar 26-29, 2026``). ``None`` for
-                                    single-day events.
-    parking_notes: Optional[str]
-    food_info: Optional[str]
-    image_url: Optional[str]
-    notes: Optional[str]          - Full card text for debugging.
-
-Pydantic validation will reject null ``start_datetime``, unknown ``category``
-literals, and any field with the wrong type. See ``events.schemas`` for the
-authoritative contract.
 """
 
 from __future__ import annotations
 
+import codecs
 import logging
 import re
 from dataclasses import dataclass
@@ -78,6 +35,8 @@ DEFAULT_JKYOG_EXTRA_PAGE_URLS: Tuple[str, ...] = ("https://www.jkyog.org/yuva",)
 # Reject nodes whose plain text is huge (usually a section wrapper or document root).
 _MAX_CARD_TEXT_CHARS = 4000
 
+<<<<<<< Updated upstream
+=======
 # Titles that indicate a skeleton/loading state or a page wrapper rather than a real event.
 # Cards that render these strings before JS hydration pollute the scrape output
 # (e.g. Chakradhar's Week 10 diagnostic caught one "Loading Event Details" row).
@@ -86,12 +45,18 @@ _PLACEHOLDER_TITLE_RE = re.compile(
     re.IGNORECASE,
 )
 
+_SERIALIZED_EVENT_BLOCK_RE = re.compile(
+    r'\\"id\\":\d+,\\"attributes\\":\{.*?\}\}(?=,\{\\"id\\":|])',
+    re.IGNORECASE | re.DOTALL,
+)
+
 
 def _is_placeholder_title(title: str | None) -> bool:
     if not title:
         return True
     return bool(_PLACEHOLDER_TITLE_RE.match(title))
 
+>>>>>>> Stashed changes
 
 @dataclass(frozen=True)
 class JkyogScrapeResult:
@@ -158,6 +123,111 @@ def _rich_card_context_text(card: BeautifulSoup) -> str:
             seen.add(txt)
         node = getattr(node, "parent", None)
     return " ".join(chunks)
+
+
+def _decode_escaped_text(raw: str | None) -> str:
+    if not raw:
+        return ""
+    t = raw.replace(r"\/", "/")
+    t = t.replace(r"\\", "\\")
+    try:
+        return codecs.decode(t, "unicode_escape").strip()
+    except Exception:
+        return t.strip()
+
+
+def _normalize_iso_utc(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        text = value.strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds") + "Z"
+    except Exception:
+        return None
+
+
+def _extract_escaped_field(blob: str, key: str) -> str:
+    m = re.search(rf'\\"{re.escape(key)}\\":\\"(.*?)\\"', blob, re.IGNORECASE | re.DOTALL)
+    return _decode_escaped_text(m.group(1)) if m else ""
+
+
+def _extract_embedded_upcoming_events(html: str, page_url: str) -> List[Dict[str, Any]]:
+    """
+    Parse Next.js serialized event payload embedded in the upcoming_events page.
+    This captures the canonical cards (All/Events/Retreats/LTP) even when the DOM
+    selectors pick wrappers or mixed content nodes.
+    """
+    out: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+
+    for block_match in _SERIALIZED_EVENT_BLOCK_RE.finditer(html):
+        block = block_match.group(0)
+        title = _extract_escaped_field(block, "EventTitle")
+        if _is_placeholder_title(title):
+            continue
+
+        subtitle = _extract_escaped_field(block, "EventSubtitle")
+        website_url = _extract_escaped_field(block, "WebsiteURL")
+        slug = _extract_escaped_field(block, "EventURLSlug")
+        uuid_value = _extract_escaped_field(block, "uuid")
+        city_m = re.search(r'\\"city\\":\\"(?P<city>.*?)\\"', block, re.IGNORECASE | re.DOTALL)
+        address_m = re.search(r'\\"address\\":\\"(?P<addr>.*?)\\"', block, re.IGNORECASE | re.DOTALL)
+        city = _decode_escaped_text(city_m.group("city") if city_m else "")
+        address = _decode_escaped_text(address_m.group("addr") if address_m else "")
+        event_location = _extract_escaped_field(block, "EventLocation")
+        tz_name = _extract_escaped_field(block, "TimeZone")
+
+        context = " ".join(
+            part for part in (title, subtitle, city, address, event_location, tz_name) if part
+        )
+        if not _looks_like_dallas_event(context):
+            continue
+
+        start_iso = _normalize_iso_utc(_extract_escaped_field(block, "StartTime"))
+        end_iso = _normalize_iso_utc(_extract_escaped_field(block, "EndTime"))
+        if not start_iso:
+            continue
+
+        key = (title.lower(), start_iso, website_url.lower(), slug.lower(), uuid_value.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        normalized_source_url: str
+        if website_url:
+            normalized_source_url = website_url
+        elif slug:
+            normalized_source_url = urljoin(JKYOG_SITE_URL + "/", slug.lstrip("/"))
+        elif uuid_value:
+            normalized_source_url = f"{page_url}#event-{uuid_value}"
+        else:
+            normalized_source_url = page_url
+
+        out.append(
+            {
+                "name": title,
+                "description": subtitle or None,
+                "start_datetime": start_iso,
+                "end_datetime": end_iso,
+                "location_name": "JKYog Radha Krishna Temple",
+                "parking_notes": None,
+                "food_info": None,
+                "sponsorship_tiers": [],
+                "image_url": None,
+                "source_url": normalized_source_url,
+                "source_site": "jkyog",
+                "is_recurring": False,
+                "category": guess_event_category(" ".join(x for x in (title, subtitle) if x)),
+                "notes": context or None,
+                "scraped_at": _now_iso_z(),
+            }
+        )
+    return out
 
 
 def _filter_card_nodes(nodes: List[BeautifulSoup]) -> List[BeautifulSoup]:
@@ -266,6 +336,18 @@ def scrape_jkyog_upcoming_events(
             continue
 
         soup = BeautifulSoup(html, "lxml")
+        if "/upcoming_events" in page_url:
+            embedded_events = _extract_embedded_upcoming_events(html, page_url)
+            if embedded_events:
+                for e in embedded_events:
+                    if len(events) >= max_events:
+                        break
+                    events.append(e)
+                if len(events) >= max_events:
+                    break
+                # Continue to next page; embedded payload is canonical for this route.
+                continue
+
         cards = _extract_event_cards(soup)
         for card in cards:
             if len(events) >= max_events:
@@ -286,18 +368,7 @@ def scrape_jkyog_upcoming_events(
                     title_node = card.select_one("h1, h2, h3, [class*='title']")
                     if title_node:
                         title = _clean_text(title_node.get_text(" ", strip=True))
-                title = title or _clean_text(rich_text.split("|")[0])
-
-                if _is_placeholder_title(title):
-                    errors.append(
-                        {
-                            "source": "jkyog",
-                            "stage": "placeholder_title",
-                            "url": page_url,
-                            "error": f"Skipped card with placeholder title: {title!r}",
-                        }
-                    )
-                    continue
+                title = title or _clean_text(rich_text.split("|")[0]) or "Untitled Event"
 
                 start_dt, end_dt = extract_event_datetimes(rich_text)
                 if not start_dt and link:

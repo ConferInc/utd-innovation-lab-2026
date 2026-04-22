@@ -58,6 +58,28 @@ def test_extract_ordinal_month_day_year() -> None:
     assert is_valid_storage_datetime(start)
 
 
+def test_extract_same_month_range_without_year() -> None:
+    text = "RKT Spiritual Retreat & Family Camp 2026 Jul 4th – Jul 10th Allen, US"
+    start, end = extract_event_datetimes(text)
+    assert start is not None and end is not None
+    sdt = parse_storage_datetime(start)
+    edt = parse_storage_datetime(end)
+    assert sdt is not None and edt is not None
+    assert sdt.month == 7 and sdt.day == 4
+    assert edt.month == 7 and edt.day == 10
+
+
+def test_extract_cross_month_range_without_year() -> None:
+    text = "Sacramento Life Transformation Program Apr 30th – May 2nd, In Person"
+    start, end = extract_event_datetimes(text)
+    assert start is not None and end is not None
+    sdt = parse_storage_datetime(start)
+    edt = parse_storage_datetime(end)
+    assert sdt is not None and edt is not None
+    assert sdt.month == 4 and sdt.day == 30
+    assert edt.month == 5 and edt.day == 2
+
+
 def test_extract_returns_none_for_empty() -> None:
     assert extract_event_datetimes("") == (None, None)
     assert extract_event_datetimes("   ") == (None, None)
