@@ -51,6 +51,14 @@ DEFAULT_SUPPLEMENTAL_TEMPLE_EVENT_URLS: Tuple[str, ...] = (
     "https://www.radhakrishnatemple.net/hindu-vivah-dallas",
 )
 
+# Known bad/stale detail slugs that repeatedly fail upstream (Cloudflare 52x / removed pages).
+# Skip these at normalization time so retries are reserved for potentially recoverable URLs.
+_BLOCKED_EVENT_DETAIL_SLUGS: frozenset[str] = frozenset(
+    {
+        "advent-reflection-series",
+    }
+)
+
 
 @dataclass(frozen=True)
 class TempleScrapeResult:
@@ -102,6 +110,10 @@ def _is_junk_temple_path(path: str) -> bool:
     pl = path.rstrip("/") or "/"
     if pl in ("/events", "/upcoming-events"):
         return True
+    if re.match(r"^/event/[^/]+$", pl, re.IGNORECASE):
+        slug = pl.split("/")[-1].strip().lower()
+        if slug in _BLOCKED_EVENT_DETAIL_SLUGS:
+            return True
     if re.match(r"^/events-\d+$", pl, re.IGNORECASE):
         return True
     return False

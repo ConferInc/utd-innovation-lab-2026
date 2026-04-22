@@ -11,6 +11,7 @@ Selenium-based fetch before expanding parsers here.
 
 from __future__ import annotations
 
+import codecs
 import logging
 import re
 from dataclasses import dataclass
@@ -34,6 +35,28 @@ DEFAULT_JKYOG_EXTRA_PAGE_URLS: Tuple[str, ...] = ("https://www.jkyog.org/yuva",)
 # Reject nodes whose plain text is huge (usually a section wrapper or document root).
 _MAX_CARD_TEXT_CHARS = 4000
 
+<<<<<<< Updated upstream
+=======
+# Titles that indicate a skeleton/loading state or a page wrapper rather than a real event.
+# Cards that render these strings before JS hydration pollute the scrape output
+# (e.g. Chakradhar's Week 10 diagnostic caught one "Loading Event Details" row).
+_PLACEHOLDER_TITLE_RE = re.compile(
+    r"^\s*(loading|untitled|tbd|coming soon|event details?|no title)\b",
+    re.IGNORECASE,
+)
+
+_SERIALIZED_EVENT_BLOCK_RE = re.compile(
+    r'\\"id\\":\d+,\\"attributes\\":\{.*?\}\}(?=,\{\\"id\\":|])',
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _is_placeholder_title(title: str | None) -> bool:
+    if not title:
+        return True
+    return bool(_PLACEHOLDER_TITLE_RE.match(title))
+
+>>>>>>> Stashed changes
 
 @dataclass(frozen=True)
 class JkyogScrapeResult:
@@ -100,6 +123,111 @@ def _rich_card_context_text(card: BeautifulSoup) -> str:
             seen.add(txt)
         node = getattr(node, "parent", None)
     return " ".join(chunks)
+
+
+def _decode_escaped_text(raw: str | None) -> str:
+    if not raw:
+        return ""
+    t = raw.replace(r"\/", "/")
+    t = t.replace(r"\\", "\\")
+    try:
+        return codecs.decode(t, "unicode_escape").strip()
+    except Exception:
+        return t.strip()
+
+
+def _normalize_iso_utc(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        text = value.strip()
+        if text.endswith("Z"):
+            text = text[:-1] + "+00:00"
+        dt = datetime.fromisoformat(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc).replace(tzinfo=None).isoformat(timespec="seconds") + "Z"
+    except Exception:
+        return None
+
+
+def _extract_escaped_field(blob: str, key: str) -> str:
+    m = re.search(rf'\\"{re.escape(key)}\\":\\"(.*?)\\"', blob, re.IGNORECASE | re.DOTALL)
+    return _decode_escaped_text(m.group(1)) if m else ""
+
+
+def _extract_embedded_upcoming_events(html: str, page_url: str) -> List[Dict[str, Any]]:
+    """
+    Parse Next.js serialized event payload embedded in the upcoming_events page.
+    This captures the canonical cards (All/Events/Retreats/LTP) even when the DOM
+    selectors pick wrappers or mixed content nodes.
+    """
+    out: List[Dict[str, Any]] = []
+    seen: set[tuple[str, str, str, str, str]] = set()
+
+    for block_match in _SERIALIZED_EVENT_BLOCK_RE.finditer(html):
+        block = block_match.group(0)
+        title = _extract_escaped_field(block, "EventTitle")
+        if _is_placeholder_title(title):
+            continue
+
+        subtitle = _extract_escaped_field(block, "EventSubtitle")
+        website_url = _extract_escaped_field(block, "WebsiteURL")
+        slug = _extract_escaped_field(block, "EventURLSlug")
+        uuid_value = _extract_escaped_field(block, "uuid")
+        city_m = re.search(r'\\"city\\":\\"(?P<city>.*?)\\"', block, re.IGNORECASE | re.DOTALL)
+        address_m = re.search(r'\\"address\\":\\"(?P<addr>.*?)\\"', block, re.IGNORECASE | re.DOTALL)
+        city = _decode_escaped_text(city_m.group("city") if city_m else "")
+        address = _decode_escaped_text(address_m.group("addr") if address_m else "")
+        event_location = _extract_escaped_field(block, "EventLocation")
+        tz_name = _extract_escaped_field(block, "TimeZone")
+
+        context = " ".join(
+            part for part in (title, subtitle, city, address, event_location, tz_name) if part
+        )
+        if not _looks_like_dallas_event(context):
+            continue
+
+        start_iso = _normalize_iso_utc(_extract_escaped_field(block, "StartTime"))
+        end_iso = _normalize_iso_utc(_extract_escaped_field(block, "EndTime"))
+        if not start_iso:
+            continue
+
+        key = (title.lower(), start_iso, website_url.lower(), slug.lower(), uuid_value.lower())
+        if key in seen:
+            continue
+        seen.add(key)
+
+        normalized_source_url: str
+        if website_url:
+            normalized_source_url = website_url
+        elif slug:
+            normalized_source_url = urljoin(JKYOG_SITE_URL + "/", slug.lstrip("/"))
+        elif uuid_value:
+            normalized_source_url = f"{page_url}#event-{uuid_value}"
+        else:
+            normalized_source_url = page_url
+
+        out.append(
+            {
+                "name": title,
+                "description": subtitle or None,
+                "start_datetime": start_iso,
+                "end_datetime": end_iso,
+                "location_name": "JKYog Radha Krishna Temple",
+                "parking_notes": None,
+                "food_info": None,
+                "sponsorship_tiers": [],
+                "image_url": None,
+                "source_url": normalized_source_url,
+                "source_site": "jkyog",
+                "is_recurring": False,
+                "category": guess_event_category(" ".join(x for x in (title, subtitle) if x)),
+                "notes": context or None,
+                "scraped_at": _now_iso_z(),
+            }
+        )
+    return out
 
 
 def _filter_card_nodes(nodes: List[BeautifulSoup]) -> List[BeautifulSoup]:
@@ -208,6 +336,18 @@ def scrape_jkyog_upcoming_events(
             continue
 
         soup = BeautifulSoup(html, "lxml")
+        if "/upcoming_events" in page_url:
+            embedded_events = _extract_embedded_upcoming_events(html, page_url)
+            if embedded_events:
+                for e in embedded_events:
+                    if len(events) >= max_events:
+                        break
+                    events.append(e)
+                if len(events) >= max_events:
+                    break
+                # Continue to next page; embedded payload is canonical for this route.
+                continue
+
         cards = _extract_event_cards(soup)
         for card in cards:
             if len(events) >= max_events:
