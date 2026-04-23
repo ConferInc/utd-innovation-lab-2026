@@ -14,91 +14,43 @@ try:
 except ImportError:
     GOOGLE_AVAILABLE = False
 
-
-# -----------------------------
-# INTENT KEYWORDS (ALL 8 FIXED)
-# -----------------------------
 INTENT_KEYWORDS = {
-    "time_based": {
-        "today", "tomorrow", "tonight", "this week", "this weekend",
-        "date", "time", "when", "schedule", "timing"
-    },
-    "event_specific": {
-        "holi", "diwali", "retreat", "event", "program",
-        "festival", "celebration", "workshop"
-    },
-    "recurring_schedule": {
-        "aarti", "darshan", "satsang", "daily", "weekly",
-        "every day", "routine", "regular"
-    },
-    "logistics": {
-        "parking", "where", "address", "location", "directions",
-        "food", "entry", "venue"
-    },
-    "sponsorship": {
-        "donate", "donation", "sponsor", "contribute",
-        "seva", "fund", "support"
-    },
-    "discovery": {
-        "events", "happening", "going on", "any events",
-        "upcoming", "what's happening", "what is happening"
-    },
-    "no_results_check": {
-        "3am", "2am", "4am", "midnight", "late night",
-        "overnight", "after midnight", "before dawn"
-    },
-    "ambiguous": set()
+    "logistics": {"parking", "where", "address", "location", "directions"},
+    "sponsorship": {"donate", "donation", "sponsor", "contribute"},
+    "discovery": {"events", "happening", "going", "any"},
+    "no_results_check": {"3am", "midnight"},
 }
 
-
-# -----------------------------
-# SYSTEM PROMPT (LLM)
-# -----------------------------
 _SYSTEM_PROMPT = """You are an intent classifier for a WhatsApp bot for JKYog Radha Krishna Temple.
 Classify the user message into exactly one of these intents based on their request:
-- time_based
-- event_specific
-- recurring_schedule
-- logistics
-- sponsorship
-- discovery
-- no_results_check
+- time_based: asking about events today, tomorrow, or a specific date/time
+- event_specific: asking about a specific named event (e.g., Holi, Diwali, Retreat)
+- recurring_schedule: asking about daily/weekly programs (e.g., Satsang, Aarti)
+- logistics: asking about parking, location, directions, or food
+- sponsorship: asking about donations, seva, or sponsorship tiers
+- discovery: general queries about what is happening or upcoming events
+- no_results_check: nonsense times or impossible requests
 
-Respond ONLY with valid JSON:
-{"intent": "<intent>", "confidence": <float between 0.0 and 1.0>}
-"""
+Respond ONLY with valid JSON in this exact format:
+{"intent": "<intent>", "confidence": <float between 0.0 and 1.0>}"""
 
-
-# -----------------------------
-# HELPERS
-# -----------------------------
 def tokenize(text: str) -> set:
     return set(text.lower().split())
-
 
 def jaccard_similarity(set1: set, set2: set) -> float:
     if not set1 or not set2:
         return 0.0
     return len(set1 & set2) / len(set1 | set2)
 
-
 def compute_entity_score(entities: dict) -> float:
-    values = [
-        entities.get("timeframe"),
-        entities.get("event_name"),
-        entities.get("program_name")
-    ]
-    count = sum(1 for v in values if v)
-    return count / len(values)
+    entity_values = [entities.get("timeframe"), entities.get("event_name"), entities.get("program_name")]
+    extracted_count = sum(1 for val in entity_values if val)
+    total_possible = len(entity_values)
+    return extracted_count / total_possible if total_possible else 0.0
 
-
-# -----------------------------
-# GEMINI (OPTIONAL)
-# -----------------------------
 def _classify_with_gemini(user_message: str) -> Dict | None:
     if not GOOGLE_AVAILABLE or not os.getenv("GOOGLE_API_KEY"):
         return None
-
     try:
         client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
         response = client.models.generate_content(
@@ -110,70 +62,37 @@ def _classify_with_gemini(user_message: str) -> Dict | None:
                 max_output_tokens=60,
             ),
         )
-
         result = json.loads(response.text.strip())
-
-        return {
-            "intent": result.get("intent", "clarification_needed"),
-            "confidence": float(result.get("confidence", 0.0))
-        }
-
+        return {"intent": result.get("intent", "clarification_needed"), "confidence": float(result.get("confidence", 0.0))}
     except Exception:
         return None
 
-
-# -----------------------------
-# FIXED RULE-BASED CLASSIFIER
-# -----------------------------
 def _classify_with_jaccard(message: str, entities: dict) -> Dict:
-    msg_tokens = tokenize(message)
     msg = message.lower()
+    
+    if entities.get("event_name"): intent = "event_specific"
+    elif entities.get("program_name"): intent = "recurring_schedule"
+    elif entities.get("timeframe"): intent = "time_based"
+    elif any(word in msg for word in INTENT_KEYWORDS["logistics"]): intent = "logistics"
+    elif any(word in msg for word in INTENT_KEYWORDS["sponsorship"]): intent = "sponsorship"
+    elif any(p in msg for p in ["what's happening", "any events", "events"]): intent = "discovery"
+    elif any(word in msg for word in INTENT_KEYWORDS["no_results_check"]): intent = "no_results_check"
+    else: intent = "ambiguous"
 
-    # ---- 1. ENTITY PRIORITY ----
-    if entities.get("event_name"):
-        intent = "event_specific"
-    elif entities.get("program_name"):
-        intent = "recurring_schedule"
-    elif entities.get("timeframe"):
-        intent = "time_based"
-    else:
-        # ---- 2. KEYWORD SCORING ----
-        scores = {
-            intent_name: jaccard_similarity(msg_tokens, keywords)
-            for intent_name, keywords in INTENT_KEYWORDS.items()
-        }
-        intent = max(scores, key=scores.get)
-
-    # ---- 3. SCORES ----
-    keyword_score = jaccard_similarity(msg_tokens, INTENT_KEYWORDS.get(intent, set()))
-    entity_score = compute_entity_score(entities)
-
-    # ---- 4. FIXED CONFIDENCE ----
-    confidence = (0.6 * keyword_score) + (0.4 * entity_score)
-
-    # ---- 5. BOOST ENTITY-DRIVEN INTENTS ----
-    if intent in ["event_specific", "recurring_schedule", "time_based"] and entity_score > 0:
-        confidence = max(confidence, 0.7)
-
-    confidence = round(confidence, 2)
-
+    keyword_score = jaccard_similarity(tokenize(message), INTENT_KEYWORDS.get(intent, set()))
+    confidence = round((keyword_score + compute_entity_score(entities)) / 2, 2)
     return {"intent": intent, "confidence": confidence}
 
-
-# -----------------------------
-# MAIN CLASSIFY FUNCTION
-# -----------------------------
 def classify(message: str) -> Dict:
     entities = extract_entities(message)
-
+    
     ai_result = _classify_with_gemini(message)
-
+    
     if not ai_result or ai_result["confidence"] < 0.6:
         result = _classify_with_jaccard(message, entities)
     else:
         result = ai_result
 
-    # ---- FINAL THRESHOLD ----
     if result["confidence"] < 0.6:
         result["intent"] = "clarification_needed"
 
@@ -184,10 +103,6 @@ def classify(message: str) -> Dict:
         "api_call": map_to_api(result["intent"], entities)
     }
 
-
-# -----------------------------
-# API MAPPING (UNCHANGED)
-# -----------------------------
 def map_to_api(intent: str, entities: dict) -> dict:
     event_name = entities.get("event_name")
     timeframe = entities.get("timeframe")
@@ -196,42 +111,18 @@ def map_to_api(intent: str, entities: dict) -> dict:
         if timeframe == "today":
             return {"endpoint": "/api/v2/events/today", "method": "GET", "params": {}}
         return {"endpoint": "/api/v2/events", "method": "GET", "params": {"start_date": timeframe}}
-
     elif intent == "event_specific":
-        return {
-            "endpoint": "/api/v2/events/search",
-            "method": "GET",
-            "params": {"q": event_name},
-            "follow_up": "resolve_event_id_and_fetch_details"
-        }
-
+        return {"endpoint": "/api/v2/events/search", "method": "GET", "params": {"q": event_name}, "follow_up": "resolve_event_id_and_fetch_details"}
     elif intent == "recurring_schedule":
         return {"endpoint": "/api/v2/events/recurring", "method": "GET", "params": {}}
-
     elif intent == "logistics":
-        if not event_name:
-            return {"action": "clarification_needed"}
-        return {
-            "endpoint": "/api/v2/events/search",
-            "method": "GET",
-            "params": {"q": event_name},
-            "follow_up": "fetch_event_details_for_logistics"
-        }
-
+        if not event_name: return {"action": "clarification_needed"}
+        return {"endpoint": "/api/v2/events/search", "method": "GET", "params": {"q": event_name}, "follow_up": "fetch_event_details_for_logistics"}
     elif intent == "sponsorship":
-        if event_name:
-            return {
-                "endpoint": "/api/v2/events/search",
-                "method": "GET",
-                "params": {"q": event_name},
-                "follow_up": "extract_sponsorship_tiers"
-            }
+        if event_name: return {"endpoint": "/api/v2/events/search", "method": "GET", "params": {"q": event_name}, "follow_up": "extract_sponsorship_tiers"}
         return {"endpoint": "/api/v2/events", "method": "GET", "params": {"limit": 5}}
-
     elif intent == "discovery":
         return {"endpoint": "/api/v2/events", "method": "GET", "params": {"limit": 5}}
-
     elif intent == "no_results_check":
         return {"endpoint": "/api/v2/events", "method": "GET", "params": {"limit": 3}}
-
     return {"action": "clarification_needed"}
