@@ -64,6 +64,37 @@ class TestIntentClassifier(unittest.TestCase):
     def test_edge_ambiguous(self):
         self.assertEqual(classify("Info")["intent"], "clarification_needed")
 
+    # CONFIDENCE BOUNDARY
+    def test_confidence_below_boundary_short_greeting(self):
+        result = classify("Hello")
+        self.assertEqual(result["intent"], "clarification_needed")
+        self.assertLess(result["confidence"], 0.6)
+
+    def test_confidence_below_boundary_unknown_request(self):
+        result = classify("Maybe")
+        self.assertEqual(result["intent"], "clarification_needed")
+        self.assertLess(result["confidence"], 0.6)
+
+    @patch("intent_classifier.extract_entities", return_value={
+        "event_name": None,
+        "program_name": None,
+        "timeframe": "tonight"
+    })
+    def test_confidence_above_boundary_time_based(self, mock_extract):
+        result = classify("What is happening tonight?")
+        self.assertEqual(result["intent"], "time_based")
+        self.assertGreater(result["confidence"], 0.6)
+
+    def test_confidence_above_boundary_no_results(self):
+        result = classify("Anything at midnight?")
+        self.assertEqual(result["intent"], "no_results_check")
+        self.assertGreater(result["confidence"], 0.6)
+
+    def test_confidence_above_boundary_discovery(self):
+        result = classify("Any events coming up?")
+        self.assertEqual(result["intent"], "discovery")
+        self.assertGreater(result["confidence"], 0.6)
+
 
 if __name__ == "__main__":
     unittest.main()
