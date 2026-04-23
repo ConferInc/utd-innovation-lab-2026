@@ -1,4 +1,4 @@
-from response_builder_fixed import _format_event_list, _truncate_whatsapp, WHATSAPP_CHAR_LIMIT
+from response_builder_2 import _format_event_list, _truncate_whatsapp, WHATSAPP_CHAR_LIMIT
 
 
 def make_fake_event(index: int) -> dict:
