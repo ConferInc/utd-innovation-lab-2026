@@ -19,7 +19,7 @@ import os
 import sys
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
-from api_client import APIClientError, EventAPIClient
+from api_client_2 import APIClientError, EventAPIClient
 from response_builder import (
     WHATSAPP_CHAR_LIMIT,
     _extract_events,
