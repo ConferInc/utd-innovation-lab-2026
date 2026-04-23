@@ -118,52 +118,7 @@ WhatsApp Bot
 
 ## 2. Canonical Event Schema
 
-```json
-{
-  "id": "integer",
-  "name": "string",
-  "subtitle": "string | null",
-  "category": "festival | retreat | satsang | youth | class | workshop | special_event | other",
-  "event_type": "in_person | online | hybrid | unknown",
-  "is_recurring": "boolean",
-  "recurrence_text": "string | null",
-  "start_datetime": "ISO-8601 string | null",
-  "end_datetime": "ISO-8601 string | null",
-  "timezone": "string | null",
-  "location_name": "string | null",
-  "address": "string | null",
-  "city": "string | null",
-  "state": "string | null",
-  "postal_code": "string | null",
-  "country": "string | null",
-  "description": "string | null",
-  "registration_required": "boolean | null",
-  "registration_status": "open | closed | unknown",
-  "registration_url": "string | null",
-  "contact_email": "string | null",
-  "contact_phone": "string | null",
-  "parking_notes": "string | null",
-  "transportation_notes": "string | null",
-  "food_info": "string | null",
-  "price": {
-    "amount": "number | null",
-    "notes": "string | null"
-  },
-  "sponsorship_tiers": [
-    {
-      "tier_name": "string",
-      "price": "number | null",
-      "description": "string | null"
-    }
-  ],
-  "source_url": "string",
-  "source_site": "jkyog | radhakrishnatemple",
-  "source_page_type": "event_detail | upcoming_events | sponsorship_page | logistics_page",
-  "scraped_at": "ISO-8601 string",
-  "source_confidence": "high | medium | low",
-  "notes": "string | null"
-}
-```
+[Rosetta Stone](./week7_final_event_data_model_response_templates_aligned_final.md)
 
 ---
 
