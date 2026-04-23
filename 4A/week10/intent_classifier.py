@@ -35,7 +35,7 @@ INTENT_KEYWORDS = {
         "date", "dates", "when", "schedule", "upcoming", "soon"
     },
     "event_specific": {
-        "event", "festival", "show", "details", "about",
+        "event", "festival", "details", "about",
         "info", "information", "attend", "ticket", "tickets"
     },
     "recurring_schedule": {
