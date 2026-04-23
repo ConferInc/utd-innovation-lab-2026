@@ -1,4 +1,6 @@
+⚠️ This document is superseded by 4A/week8/api_contract_v2.1.md. Field names and auth mechanisms below are historical.
 # 📄 File: 4A/week6/migration-guide.md
+
 This document provides the literal "Before and After" code and data structures.
 # Migration Guide (Week 5 → Week 6)
 
