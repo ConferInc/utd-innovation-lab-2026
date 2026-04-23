@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 
 
 from intent_classifier import classify
-from response_builder_2 import build_response
+from response_builder import build_response
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
