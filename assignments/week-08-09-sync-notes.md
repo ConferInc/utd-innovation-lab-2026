@@ -179,7 +179,8 @@ curl -s -X POST "{BASE}/escalations" -H "Content-Type: application/json" \
 
 - **Schema lock (Chakradhar + Chanakya):** Confirmed in [schema-decisions.md](../4B/week8/docs/schema-decisions.md) as locked canonical contract (`sponsorship_tiers[]: {tier_name, price, description}` and stable event IDs).
 - **Live URL check:** Verified reachable with successful live responses for all 5 Team 4A event endpoints. Evidence: [Live events API proof](../4B/week8/docs/live-events-api-proof.md) (run against `https://jkyog-whatsapp-bot-week4-ffuk.onrender.com` on 2026-04-16 UTC).
-- **Blockers / follow-ups:** No API-path blocker remains (`/api/v2/events` is active). Keep manual Slack permalink and Team 4A acknowledgement in this section once captured.
+- **Blockers / follow-ups:** No API-path blocker remains (`/api/v2/events` is active). Manual Slack permalink and Team 4A acknowledgement are still pending capture.
+- **Week 10 external dependency:** Harshith webhook confirmation (after hardcoded response removal) remains pending external confirmation.
 
 ## Other auth-sensitive routes (not Team 4A events)
 

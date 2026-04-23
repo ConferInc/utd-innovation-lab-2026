@@ -87,3 +87,36 @@ def test_construct_webhook_event_missing_signature(monkeypatch):
 
     with pytest.raises(ValueError, match="Missing Stripe-Signature header."):
         stripe_integration.construct_webhook_event(b"{}", None)
+
+def test_construct_webhook_event_verifies_signature(monkeypatch):
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test_secret")
+    stripe_integration = StripeIntegration()
+
+    class MockWebhook:
+        @staticmethod
+        def construct_event(payload, sig_header, secret):
+            assert payload == b'{"id":"evt_test"}'
+            assert sig_header == "t=12345,v1=testsig"
+            assert secret == "whsec_test_secret"
+            return {
+                "id": "evt_test",
+                "type": "payment_intent.succeeded",
+                "data": {
+                    "object": {
+                        "id": "pi_123",
+                        "amount": 5000,
+                        "currency": "usd",
+                    }
+                },
+            }
+
+    monkeypatch.setattr(stripe_module.stripe, "Webhook", MockWebhook)
+
+    event = stripe_integration.construct_webhook_event(
+        b'{"id":"evt_test"}',
+        "t=12345,v1=testsig"
+    )
+
+    assert event["id"] == "evt_test"
+    assert event["type"] == "payment_intent.succeeded"
+    assert event["data"]["object"]["id"] == "pi_123"

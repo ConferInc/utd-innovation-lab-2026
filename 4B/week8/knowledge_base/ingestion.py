@@ -104,11 +104,26 @@ def _event_dict_to_kb_doc(event: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def ingest_events(db: "Session", *, page_size: int = 200) -> int:
-    """Load **all** upcoming events via EventService and register them for `search_kb`.
+def _event_identity_key(event: Dict[str, Any]) -> str:
+    """Stable dedupe key across upcoming + recurring ingestion paths."""
+    event_id = event.get("id")
+    if event_id is not None:
+        return f"id:{event_id}"
+    return "|".join(
+        [
+            str(event.get("name") or "").strip().lower(),
+            str(event.get("start_datetime") or "").strip(),
+            str(event.get("source_url") or "").strip(),
+        ]
+    )
 
-    Paginates with *page_size* until no rows remain so large calendars are fully indexed.
-    Replaces any previous ingested DB events in this process for a consistent snapshot.
+
+def ingest_events(db: "Session", *, page_size: int = 200) -> int:
+    """Load upcoming + recurring events via EventService and register for `search_kb`.
+
+    Paginates upcoming rows with *page_size* until no rows remain, then merges in
+    recurring programs. Replaces any previous ingested DB events in this process for
+    a consistent snapshot.
     """
     if page_size < 1:
         raise ValueError("page_size must be >= 1")
@@ -120,6 +135,7 @@ def ingest_events(db: "Session", *, page_size: int = 200) -> int:
     clear_ingested_events()
     service = EventService(db, cache=None)
     combined: List[Dict[str, Any]] = []
+    seen_keys: set[str] = set()
     offset = 0
     while True:
         rows = service.get_upcoming_events(
@@ -127,10 +143,25 @@ def ingest_events(db: "Session", *, page_size: int = 200) -> int:
         )
         if not rows:
             break
-        combined.extend(_event_dict_to_kb_doc(ev) for ev in rows)
+        for ev in rows:
+            key = _event_identity_key(ev)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            combined.append(_event_dict_to_kb_doc(ev))
         if len(rows) < page_size:
             break
         offset += page_size
+
+    # Explicitly include recurring programs so KB search can find daily/weekly schedules.
+    recurring_rows = service.get_recurring_events(stale_after_days=30)
+    for ev in recurring_rows:
+        key = _event_identity_key(ev)
+        if key in seen_keys:
+            continue
+        seen_keys.add(key)
+        combined.append(_event_dict_to_kb_doc(ev))
+
     global _ingested_event_docs
     _ingested_event_docs = combined
     return len(_ingested_event_docs)

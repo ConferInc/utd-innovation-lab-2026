@@ -16,7 +16,7 @@ from __future__ import annotations
 import calendar
 import os
 import re
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Optional, Tuple
 from zoneinfo import ZoneInfo
 
@@ -95,6 +95,21 @@ _RANGE_SAME_MONTH = re.compile(
     re.IGNORECASE,
 )
 
+_ORDINAL = r"(?:st|nd|rd|th)?"
+_RANGE_SAME_MONTH_OPTIONAL_YEAR = re.compile(
+    rf"\b(?P<m>{_MONTH_LONG}|{_MONTH_SHORT})\s+"
+    rf"(?P<d1>\d{{1,2}}){_ORDINAL}\s*[–-]\s*(?P<d2>\d{{1,2}}){_ORDINAL}"
+    rf"(?:,?\s*(?P<y>\d{{4}}))?\b",
+    re.IGNORECASE,
+)
+_RANGE_CROSS_MONTH_OPTIONAL_YEAR = re.compile(
+    rf"\b(?P<m1>{_MONTH_LONG}|{_MONTH_SHORT})\s+"
+    rf"(?P<d1>\d{{1,2}}){_ORDINAL}\s*[–-]\s*"
+    rf"(?P<m2>{_MONTH_LONG}|{_MONTH_SHORT})\s+(?P<d2>\d{{1,2}}){_ORDINAL}"
+    rf"(?:,?\s*(?P<y>\d{{4}}))?\b",
+    re.IGNORECASE,
+)
+
 # e.g. "Apr 1st, 2026" or "April 4th, 2026, 11:00 AM" (temple / Webflow copy)
 _ORDINAL_DATE = re.compile(
     r"\b(?P<mon>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+"
@@ -103,6 +118,26 @@ _ORDINAL_DATE = re.compile(
 )
 
 _HAS_TIME = re.compile(r"\b\d{1,2}:\d{2}\b")
+
+
+# Known US timezone abbreviations mapped to fixed UTC offsets in seconds.
+# dateutil emits UnknownTimezoneWarning otherwise and leaves ``tzinfo`` as None,
+# forcing fallback to ``_default_tz`` even when the source explicitly named CST/EST/PST.
+# ``"T"`` is mapped to ``None`` so the stray separator from strings like
+# ``"2026-04-04T14:30"`` is treated as literal text instead of an unknown zone.
+_TZINFOS: dict[str, int | None] = {
+    "UTC": 0,
+    "GMT": 0,
+    "EST": -5 * 3600,
+    "EDT": -4 * 3600,
+    "CST": -6 * 3600,
+    "CDT": -5 * 3600,
+    "MST": -7 * 3600,
+    "MDT": -6 * 3600,
+    "PST": -8 * 3600,
+    "PDT": -7 * 3600,
+    "T": None,
+}
 
 
 def _first_iso_substring(text: str) -> Optional[str]:
@@ -116,6 +151,21 @@ def _month_name_to_num(name: str) -> int:
         if calendar.month_name[i].lower() == n or calendar.month_abbr[i].lower() == n:
             return i
     raise ValueError(f"unknown month: {name!r}")
+
+
+def _resolve_year_for_month_day(month: int, day: int, explicit_year: Optional[int]) -> int:
+    if explicit_year is not None:
+        return explicit_year
+    today = datetime.now(_default_tz()).date()
+    current_year = today.year
+    try:
+        candidate = date(current_year, month, day)
+    except ValueError:
+        return current_year
+    # Treat very recent past dates as current year; older dates roll to next year.
+    if candidate < (today - timedelta(days=7)):
+        return current_year + 1
+    return current_year
 
 
 def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
@@ -157,7 +207,7 @@ def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
                 break
         try:
             now_local = datetime.now(_default_tz())
-            dt = dateutil_parser.parse(snippet, fuzzy=True, default=now_local)
+            dt = dateutil_parser.parse(snippet, fuzzy=True, default=now_local, tzinfos=_TZINFOS)
             if 1990 <= dt.year <= 2100:
                 has_explicit_time = bool(_HAS_TIME.search(snippet))
                 if not has_explicit_time and dt.hour == 0 and dt.minute == 0 and dt.second == 0:
@@ -168,7 +218,7 @@ def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
         except (ValueError, TypeError, OverflowError):
             pass
 
-    # 3) Same-month range: Mar 26-29, 2026
+    # 3) Same-month range with explicit year: Mar 26-29, 2026
     m = _RANGE_SAME_MONTH.search(text)
     if m:
         month_s = m.group("m")
@@ -182,10 +232,52 @@ def extract_event_datetimes(text: str) -> Tuple[Optional[str], Optional[str]]:
         except ValueError:
             pass
 
-    # 4) dateutil fuzzy on full text
+    # 4) Same-month range with optional year: Jul 2nd - Jul 5th (or with year)
+    m = _RANGE_SAME_MONTH_OPTIONAL_YEAR.search(text)
+    if m:
+        month_s = m.group("m")
+        d1 = int(m.group("d1"))
+        d2 = int(m.group("d2"))
+        y_raw = m.group("y")
+        y = int(y_raw) if y_raw else None
+        try:
+            month_num = _month_name_to_num(month_s)
+            start_y = _resolve_year_for_month_day(month_num, d1, y)
+            end_y = start_y
+            start_d = date(start_y, month_num, d1)
+            end_d = date(end_y, month_num, d2)
+            if end_d < start_d and y is None:
+                end_d = date(start_y + 1, month_num, d2)
+            if end_d >= start_d:
+                return _local_date_at_default_time(start_d), _local_date_at_default_time(end_d)
+        except ValueError:
+            pass
+
+    # 5) Cross-month range with optional year: Apr 30th - May 2nd (or with year)
+    m = _RANGE_CROSS_MONTH_OPTIONAL_YEAR.search(text)
+    if m:
+        m1 = _month_name_to_num(m.group("m1"))
+        m2 = _month_name_to_num(m.group("m2"))
+        d1 = int(m.group("d1"))
+        d2 = int(m.group("d2"))
+        y_raw = m.group("y")
+        y = int(y_raw) if y_raw else None
+        try:
+            start_y = _resolve_year_for_month_day(m1, d1, y)
+            end_y = start_y
+            start_d = date(start_y, m1, d1)
+            end_d = date(end_y, m2, d2)
+            if end_d < start_d and y is None:
+                end_d = date(start_y + 1, m2, d2)
+            if end_d >= start_d:
+                return _local_date_at_default_time(start_d), _local_date_at_default_time(end_d)
+        except ValueError:
+            pass
+
+    # 6) dateutil fuzzy on full text
     try:
         now_local = datetime.now(_default_tz())
-        dt = dateutil_parser.parse(text, fuzzy=True, default=now_local)
+        dt = dateutil_parser.parse(text, fuzzy=True, default=now_local, tzinfos=_TZINFOS)
         if dt.year < 1990 or dt.year > 2100:
             return None, None
         has_explicit_time = bool(_HAS_TIME.search(text))

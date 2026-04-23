@@ -294,3 +294,16 @@ class Event(Base):
         if isinstance(value, str):
             return validate_recurrence_value(value)
         return validate_recurrence_value(str(value))
+
+    def __repr__(self) -> str:
+        start = self.start_datetime.isoformat() if self.start_datetime else None
+        end = self.end_datetime.isoformat() if self.end_datetime else None
+        source_site = self.source_site.value if hasattr(self.source_site, "value") else self.source_site
+        return (
+            f"<Event id={self.id} "
+            f"name={self.name!r} "
+            f"source_site={source_site} "
+            f"start={start} "
+            f"end={end} "
+            f"is_recurring={self.is_recurring}>"
+        )

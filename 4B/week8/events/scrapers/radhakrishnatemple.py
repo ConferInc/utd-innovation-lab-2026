@@ -11,6 +11,49 @@ behind different URLs.
 Upgrade path for JS-heavy sites: drive a headless browser (Playwright or
 Selenium), wait for selectors, then parse the rendered HTML or intercept XHR
 JSON responses.
+
+Scraped event payload schema
+----------------------------
+Each dict appended to ``TempleScrapeResult.events`` (and later bundled into
+``scraped_events.json`` by ``events.scrapers.scrape_all.scrape_all_events``)
+uses exactly the keys below. Downstream Pydantic ``EventPayload`` and
+``events.storage`` enforce these invariants; values that break them cause the
+row to be rejected at validation time.
+
+Guaranteed (never None):
+    name: str                    - Extracted from the detail page title;
+                                   placeholder titles (``Loading Event
+                                   Details`` ...) are filtered before emission.
+    location_name: str           - Always ``"JKYog Radha Krishna Temple"``.
+    source_url: str              - The ``/event/<slug>`` detail page URL, or
+                                   a supplemental public event URL.
+    source_site: str             - Always ``"radhakrishnatemple"``.
+    is_recurring: bool           - Always ``False`` from the scraper.
+    category: Category literal   - One of ``festival | retreat | satsang |
+                                   youth | class | workshop | health |
+                                   special_event | other`` (see
+                                   ``category_from_title.guess_event_category``).
+    sponsorship_tiers: list      - Always ``[]`` from the scraper; populated
+                                   downstream when known.
+    scraped_at: str              - ISO-8601 UTC with ``Z`` suffix.
+
+Nullable (may be ``None``):
+    description: Optional[str]    - ``meta[name=description]`` or first
+                                    article paragraph.
+    start_datetime: Optional[str] - ISO-8601; rows with ``None`` are dropped by
+                                    ``scrape_all_events`` (counted in
+                                    ``failed_start_datetime_parse``).
+    end_datetime: Optional[str]   - ISO-8601; populated for multi-day ranges
+                                    parsed from phrases like ``Mar 26-29,
+                                    2026``. ``None`` for single-day events.
+    parking_notes: Optional[str]
+    food_info: Optional[str]
+    image_url: Optional[str]      - From ``meta[property=og:image]`` if present.
+    notes: Optional[str]          - Full ``.entry-content`` / ``article`` text.
+
+Pydantic validation will reject null ``start_datetime``, unknown ``category``
+literals, and any field with the wrong type. See ``events.schemas`` for the
+authoritative contract.
 """
 
 from __future__ import annotations
@@ -51,11 +94,34 @@ DEFAULT_SUPPLEMENTAL_TEMPLE_EVENT_URLS: Tuple[str, ...] = (
     "https://www.radhakrishnatemple.net/hindu-vivah-dallas",
 )
 
+# Known bad/stale detail slugs that repeatedly fail upstream (Cloudflare 52x / removed pages).
+# Skip these at normalization time so retries are reserved for potentially recoverable URLs.
+_BLOCKED_EVENT_DETAIL_SLUGS: frozenset[str] = frozenset(
+    {
+        "advent-reflection-series",
+    }
+)
+
 
 @dataclass(frozen=True)
 class TempleScrapeResult:
     events: List[Dict[str, Any]]
     errors: List[Dict[str, Any]]
+
+
+# Titles that indicate a pre-hydration skeleton or a non-event landing page. Keeping a
+# single source of truth here so both homepage-discovered and supplemental detail pages
+# are filtered uniformly. Mirrors the jkyog.py regex - keep them in sync.
+_PLACEHOLDER_TITLE_RE = re.compile(
+    r"^\s*(loading|untitled|tbd|coming soon|event details?|no title)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder_title(title: Optional[str]) -> bool:
+    if not title:
+        return True
+    return bool(_PLACEHOLDER_TITLE_RE.match(title))
 
 
 def _now_iso_z() -> str:
@@ -102,6 +168,10 @@ def _is_junk_temple_path(path: str) -> bool:
     pl = path.rstrip("/") or "/"
     if pl in ("/events", "/upcoming-events"):
         return True
+    if re.match(r"^/event/[^/]+$", pl, re.IGNORECASE):
+        slug = pl.split("/")[-1].strip().lower()
+        if slug in _BLOCKED_EVENT_DETAIL_SLUGS:
+            return True
     if re.match(r"^/events-\d+$", pl, re.IGNORECASE):
         return True
     return False
@@ -272,10 +342,13 @@ def _extract_event_links_from_homepage(home_html: str, base_url: str) -> List[st
     return deduped
 
 
-def _parse_detail_page(detail_html: str, *, url: str) -> Dict[str, Any]:
+def _parse_detail_page(detail_html: str, *, url: str) -> Optional[Dict[str, Any]]:
     soup = BeautifulSoup(detail_html, "lxml")
 
-    title = _extract_first(soup, ["h1", "h2", ".entry-title", "[class*='title']"]) or "Untitled Event"
+    title = _extract_first(soup, ["h1", "h2", ".entry-title", "[class*='title']"])
+    if _is_placeholder_title(title):
+        return None
+
     description = _extract_first(
         soup,
         [
@@ -371,6 +444,16 @@ def scrape_radhakrishnatemple(
         try:
             detail_html = client.get_text(url)
             payload = _parse_detail_page(detail_html, url=url)
+            if payload is None:
+                errors.append(
+                    {
+                        "source": "radhakrishnatemple",
+                        "stage": "placeholder_title",
+                        "url": url,
+                        "error": "Skipped detail page with placeholder/loading title",
+                    }
+                )
+                continue
             events.append(payload)
         except httpx.HTTPStatusError as exc:
             err = str(exc)

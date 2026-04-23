@@ -256,3 +256,68 @@ def test_ingest_events_paginates_all_upcoming():
         for i in range(4):
             hits = search_kb(f"KbPage{i}", top_k=3)
             assert any(h.get("payload", {}).get("name") == f"KbPage{i}" for h in hits)
+
+
+def test_holi_seed_ingest_and_kb_search_surface_expected_fields():
+    with _sqlite_session_scope() as (db, SessionLocal):
+        upsert_events(
+            db,
+            [
+                _base_payload(
+                    name="Holi Mela Dallas",
+                    description="Celebrate Holi with colors, music, and prasadam.",
+                    category="festival",
+                    source_site="radhakrishnatemple",
+                    source_url="https://example.org/holi-mela",
+                )
+            ],
+        )
+        ingest_events(db)
+        hits = search_kb("holi", top_k=10)
+        holi = next(
+            (
+                h
+                for h in hits
+                if h.get("type") == "event"
+                and "holi" in str(h.get("payload", {}).get("name", "")).lower()
+            ),
+            None,
+        )
+        assert holi is not None
+        payload = holi["payload"]
+        assert payload["name"] == "Holi Mela Dallas"
+        assert payload.get("start_datetime")
+        assert payload.get("source_site") == "radhakrishnatemple"
+
+
+def test_ingest_events_includes_recurring_programs_for_kb_search():
+    with _sqlite_session_scope() as (db, SessionLocal):
+        upsert_events(
+            db,
+            [
+                _base_payload(
+                    name="Weekly Sunday Satsang",
+                    description="Weekly satsang and kirtan at the temple.",
+                    is_recurring=True,
+                    recurrence_text="weekly:sunday",
+                    recurrence_pattern="weekly:sunday",
+                    source_site="jkyog",
+                    source_url="https://example.org/weekly-satsang",
+                )
+            ],
+        )
+        ingest_events(db)
+        hits = search_kb("weekly satsang sunday", top_k=10)
+        recurring = next(
+            (
+                h
+                for h in hits
+                if h.get("type") == "event"
+                and h.get("payload", {}).get("name") == "Weekly Sunday Satsang"
+            ),
+            None,
+        )
+        assert recurring is not None
+        payload = recurring["payload"]
+        assert payload.get("is_recurring") is True
+        assert str(payload.get("recurrence_text", "")).lower() == "weekly:sunday"

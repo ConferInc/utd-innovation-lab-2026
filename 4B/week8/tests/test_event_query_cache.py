@@ -80,3 +80,17 @@ def test_shared_cache_honors_max_size_and_lru_on_first_create() -> None:
     assert shared.get(("b",)) is None
     assert shared.get(("a",)) == "A"
     assert shared.get(("c",)) == "C"
+
+
+def test_lru_boundary_evicts_oldest_and_keeps_newest() -> None:
+    """Week 10 explicit boundary: insert max_size+1 and verify eviction."""
+    cache = EventQueryCache(ttl_seconds=300.0, max_size=3)
+    cache.set(("k1",), "v1")
+    cache.set(("k2",), "v2")
+    cache.set(("k3",), "v3")
+    cache.set(("k4",), "v4")
+
+    assert cache.get(("k1",)) is None  # oldest evicted
+    assert cache.get(("k2",)) == "v2"
+    assert cache.get(("k3",)) == "v3"
+    assert cache.get(("k4",)) == "v4"  # newest retained

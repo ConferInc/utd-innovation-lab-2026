@@ -27,7 +27,7 @@ if str(_week_dir) not in sys.path:
 
 import json
 import logging
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Set, Tuple
 
 from sqlalchemy.orm import Session
 
@@ -35,10 +35,12 @@ try:
     from ..events.services.event_query_cache import invalidate_events_cache
     from ..events.storage.event_storage import upsert_events
     from ..knowledge_base.ingestion import ingest_events
+    from ..database.schema import Event
 except ImportError:
     from events.services.event_query_cache import invalidate_events_cache
     from events.storage.event_storage import upsert_events
     from knowledge_base.ingestion import ingest_events
+    from database.schema import Event
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +49,7 @@ _DATA_DIR = _week_dir / "data"
 _DEFAULT_INPUT = _DATA_DIR / "scraped_events.json"
 # Committed dev snapshot (not live scrape output); safe to version-control.
 _FIXTURE_INPUT = _DATA_DIR / "scraped_events.fixture.json"
+_DEFAULT_MANAGED_SOURCE_SITES: Tuple[str, ...] = ("jkyog", "radhakrishnatemple")
 
 
 def _strip_fixture_meta(obj: Dict[str, Any]) -> Dict[str, Any]:
@@ -77,11 +80,87 @@ def _load_input(path: Path) -> List[Dict[str, Any]]:
     return cleaned
 
 
-def seed_from_file(db: Session, input_path: str) -> Dict[str, int]:
-    """Load events from *input_path*, upsert into DB, refresh KB index, invalidate cache."""
+def _event_key(source_site: Any, source_url: Any) -> Tuple[str, str]:
+    site_value = getattr(source_site, "value", source_site)
+    site = str(site_value or "").strip().lower()
+    url = str(source_url or "").strip()
+    return site, url
+
+
+def _prune_missing_events(
+    db: Session,
+    *,
+    fresh_events: List[Dict[str, Any]],
+    managed_source_sites: Tuple[str, ...],
+    dry_run: bool,
+) -> Dict[str, int]:
+    managed = {site.strip().lower() for site in managed_source_sites if site and site.strip()}
+    if not managed:
+        return {"pruned_candidates": 0, "pruned_deleted": 0}
+
+    fresh_keys: Set[Tuple[str, str]] = set()
+    for event in fresh_events:
+        site, url = _event_key(event.get("source_site"), event.get("source_url"))
+        if site in managed and url:
+            fresh_keys.add((site, url))
+
+    existing_rows = (
+        db.query(Event.id, Event.source_site, Event.source_url)
+        .filter(Event.source_site.in_(list(managed)))
+        .all()
+    )
+
+    stale_ids: List[int] = []
+    for row in existing_rows:
+        site, url = _event_key(row.source_site, row.source_url)
+        if not url:
+            stale_ids.append(int(row.id))
+            continue
+        if (site, url) not in fresh_keys:
+            stale_ids.append(int(row.id))
+
+    deleted = 0
+    if stale_ids and not dry_run:
+        deleted = (
+            db.query(Event)
+            .filter(Event.id.in_(stale_ids))
+            .delete(synchronize_session=False)
+        )
+        db.commit()
+
+    return {
+        "pruned_candidates": len(stale_ids),
+        "pruned_deleted": int(deleted),
+    }
+
+
+def seed_from_file(
+    db: Session,
+    input_path: str,
+    *,
+    prune_missing: bool = False,
+    prune_dry_run: bool = False,
+) -> Dict[str, int]:
+    """Load events from *input_path*, upsert into DB, optionally prune stale rows, refresh KB, invalidate cache."""
     events = _load_input(Path(input_path).resolve())
     stats = upsert_events(db, events)
     stats["input_count"] = len(events)
+    if prune_missing:
+        prune_stats = _prune_missing_events(
+            db,
+            fresh_events=events,
+            managed_source_sites=_DEFAULT_MANAGED_SOURCE_SITES,
+            dry_run=prune_dry_run,
+        )
+        stats.update(prune_stats)
+        if prune_dry_run:
+            logger.info(
+                "Prune dry-run complete: %d candidates (no deletes applied)",
+                prune_stats["pruned_candidates"],
+            )
+    else:
+        stats["pruned_candidates"] = 0
+        stats["pruned_deleted"] = 0
     invalidate_events_cache()
     ingested = ingest_events(db)
     stats["kb_events_ingested"] = ingested
@@ -105,7 +184,20 @@ def main() -> None:
         default=None,
         help="Path to a custom JSON file to seed from.",
     )
+    parser.add_argument(
+        "--prune-missing",
+        action="store_true",
+        help="Delete existing scraper-managed DB rows not present in this seed input. "
+             "Default behavior remains non-destructive when omitted.",
+    )
+    parser.add_argument(
+        "--dry-run-prune",
+        action="store_true",
+        help="Show prune candidates without deleting rows (requires --prune-missing).",
+    )
     args = parser.parse_args()
+    if args.dry_run_prune and not args.prune_missing:
+        parser.error("--dry-run-prune requires --prune-missing")
 
     # Determine input file
     if args.file:
@@ -124,7 +216,12 @@ def main() -> None:
     db = SessionLocal()
 
     try:
-        stats = seed_from_file(db, str(input_path))
+        stats = seed_from_file(
+            db,
+            str(input_path),
+            prune_missing=args.prune_missing,
+            prune_dry_run=args.dry_run_prune,
+        )
         print(f"Seed complete: {stats}")
     except Exception:
         logger.exception("Seed failed")

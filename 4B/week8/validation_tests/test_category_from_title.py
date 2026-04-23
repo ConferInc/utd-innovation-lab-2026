@@ -31,3 +31,23 @@ from events.scrapers.category_from_title import guess_event_category
 )
 def test_guess_event_category(text: str, expected: str) -> None:
     assert guess_event_category(text) == expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # Week 10: word-boundary regex must reject substring collisions that
+        # the pre-regex ``if kw in t`` version silently matched.
+        # "class" inside "classical" -> previously bucketed as class.
+        ("Classical Music Night", "other"),
+        # "class" inside "reclassification" -> previously bucketed as class.
+        ("Reclassification Notice", "other"),
+        # Plurals that we deliberately added to the keyword tuples must still match.
+        ("Morning Prayers and Kirtans", "satsang"),
+        ("Weekly Meditation Classes", "class"),
+        # "spiritual camp" (compound) is still an explicit keyword for retreat.
+        ("Spiritual Camp Weekend", "retreat"),
+    ],
+)
+def test_guess_event_category_word_boundary(text: str, expected: str) -> None:
+    assert guess_event_category(text) == expected

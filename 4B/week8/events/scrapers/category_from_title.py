@@ -1,7 +1,14 @@
-"""Infer EventPayload ``category`` from free text (title or card body)."""
+"""Infer EventPayload ``category`` from free text (title or card body).
+
+Matching uses word-boundary regex (``\\b``) so substring collisions like
+``"classical"`` no longer match ``class`` and ``"campus"`` no longer matches
+``camp``. Keyword tuples below should list all forms (singular/plural) that
+should match - ``\\bprayer\\b`` deliberately does not match ``"prayers"``.
+"""
 from __future__ import annotations
 
-from typing import Final, Literal
+import re
+from typing import Final, Literal, Pattern
 
 Category = Literal[
     "festival",
@@ -28,16 +35,44 @@ CATEGORY_KEYWORDS: Final[dict[str, tuple[str, ...]]] = {
         "jayanti",
         "utsav",
         "festival",
+        "festivals",
     ),
-    # Avoid bare "camp" — it matches inside unrelated words like "campus".
-    "retreat": ("retreat", "spiritual camp", "weekend retreat"),
-    "satsang": ("satsang", "kirtan", "bhajan", "aarti", "arati", "prayer", "parayanam"),
+    # Avoid bare "camp" - it would match inside unrelated words like "campus"
+    # even with word boundaries when the upstream copy literally says "camp".
+    "retreat": ("retreat", "retreats", "spiritual camp", "weekend retreat"),
+    "satsang": (
+        "satsang",
+        "satsangs",
+        "kirtan",
+        "kirtans",
+        "bhajan",
+        "bhajans",
+        "aarti",
+        "arati",
+        "prayer",
+        "prayers",
+        "parayanam",
+    ),
     "youth": ("yuva", "youth", "students", "utd", "college"),
-    "class": ("class", "course", "seminar", "yoga", "meditation", "kriya"),
-    "workshop": ("workshop", "training", "intensive"),
+    "class": ("class", "classes", "course", "courses", "seminar", "yoga", "meditation", "kriya"),
+    "workshop": ("workshop", "workshops", "training", "intensive"),
     "health": ("health fair", "health camp", "medical", "biometric", "screening"),
     "special_event": ("visit", "talk", "speaker", "swami", "lecture", "guest"),
 }
+
+
+def _compile_patterns(keyword_map: dict[str, tuple[str, ...]]) -> dict[str, Pattern[str]]:
+    """Return one compiled ``\\b(kw1|kw2|...)\\b`` regex per category."""
+    compiled: dict[str, Pattern[str]] = {}
+    for category, keywords in keyword_map.items():
+        if not keywords:
+            continue
+        alternation = "|".join(re.escape(kw) for kw in keywords)
+        compiled[category] = re.compile(rf"\b(?:{alternation})\b", re.IGNORECASE)
+    return compiled
+
+
+CATEGORY_PATTERNS: Final[dict[str, Pattern[str]]] = _compile_patterns(CATEGORY_KEYWORDS)
 
 
 def guess_event_category(text: str) -> Category:
@@ -45,8 +80,7 @@ def guess_event_category(text: str) -> Category:
     t = (text or "").lower()
     if not t.strip():
         return "other"
-    for category, keywords in CATEGORY_KEYWORDS.items():
-        for kw in keywords:
-            if kw in t:
-                return category  # type: ignore[return-value]
+    for category, pattern in CATEGORY_PATTERNS.items():
+        if pattern.search(t):
+            return category  # type: ignore[return-value]
     return "other"

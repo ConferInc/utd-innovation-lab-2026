@@ -50,13 +50,41 @@ def main() -> None:
     out_path = Path(args.output).resolve()
     _write_json(out_path, payload)
     n_events = len(payload.get("events", []))
-    n_errors = len(payload.get("errors", []))
     n_skipped = int(payload.get("skipped_invalid_datetime", 0))
+    metrics = payload.get("metrics") or {}
+    n_scraper_errors = int(metrics.get("scraper_errors_logged", 0))
     print(f"Wrote {n_events} events to {out_path}")
-    if n_skipped:
-        print(f"Skipped (missing/invalid start_datetime): {n_skipped}")
-    if n_errors:
-        print(f"Errors logged: {n_errors}")
+    print(f"Skipped (missing/invalid start_datetime): {n_skipped}")
+    print(f"Scraper errors logged: {n_scraper_errors}")
+    if metrics:
+        parse_rate_pct = float(metrics.get("start_datetime_parse_rate", 0.0)) * 100.0
+        print(
+            "Scrape quality: "
+            f"total={int(metrics.get('total_scraped', 0))} "
+            f"parsed_dt={int(metrics.get('passed_start_datetime_parse', 0))} "
+            f"parse_rate={parse_rate_pct:.1f}% "
+            f"category_not_other={int(metrics.get('passed_category_not_other', 0))} "
+            f"duplicates={int(metrics.get('duplicate_count', 0))} "
+            f"deduped={int(metrics.get('deduped_event_count', 0))}"
+        )
+        raw_count_by_site = metrics.get("raw_count_by_source_site") or {}
+        if raw_count_by_site:
+            summary = ", ".join(
+                f"{site}={count}" for site, count in sorted(raw_count_by_site.items())
+            )
+            print(f"Raw by source_site: {summary}")
+        validated_count_by_site = metrics.get("validated_count_by_source_site") or {}
+        if validated_count_by_site:
+            summary = ", ".join(
+                f"{site}={count}" for site, count in sorted(validated_count_by_site.items())
+            )
+            print(f"Validated by source_site: {summary}")
+        deduped_count_by_site = metrics.get("deduped_count_by_source_site") or {}
+        if deduped_count_by_site:
+            summary = ", ".join(
+                f"{site}={count}" for site, count in sorted(deduped_count_by_site.items())
+            )
+            print(f"Deduped by source_site: {summary}")
 
 
 if __name__ == "__main__":
