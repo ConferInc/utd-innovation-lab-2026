@@ -19,6 +19,23 @@ INTENT_KEYWORDS = {
     "sponsorship": {"donate", "donation", "sponsor", "contribute"},
     "discovery": {"events", "happening", "going", "any"},
     "no_results_check": {"3am", "midnight"},
+    "time_based": { "today", "tomorrow", "this week", "this weekend",
+        "next week", "tonight", "date", "time",
+        "when", "schedule", "timing", "start time", "end time"
+    },
+    "event_specific": {
+        "event", "program", "festival", "session", "workshop", "class", "celebration",
+        "aarti", "darshan", "retreat", "seminar"
+    },
+    "recurring_schedule": {
+        "daily", "every day", "weekly", "every week", "every monday", "every tuesday", "every weekend",
+        "recurring", "regular", "routine",
+        "hours", "open hours", "closing time"
+    },
+    "ambiguous": {
+        "info", "information", "details", "tell me more", "help", "something",
+        "stuff", "things", "not sure", "anything"
+    }
 }
 
 _SYSTEM_PROMPT = """You are an intent classifier for a WhatsApp bot for JKYog Radha Krishna Temple.
