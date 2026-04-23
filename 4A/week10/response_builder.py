@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
-from api_client_2 import (
+from api_client import (
     APIClientError,
     APIConfig,
     EventAPIClient,
