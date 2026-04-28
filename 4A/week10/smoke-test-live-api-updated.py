@@ -2,11 +2,11 @@
 
 Uses the latest attached files:
 - api_client.py
-- response_builder_fixed.py
+- response_builder.py
 
 What it checks:
 1. All 5 Team 4B endpoints are reachable through EventAPIClient.
-2. List payloads can be parsed by response_builder_fixed._extract_events(...).
+2. List payloads can be parsed by response_builder._extract_events(...).
 3. Single-event detail works whether /{id} returns a direct event dict or {"event": {...}}.
 4. build_response(...) produces readable WhatsApp-safe output for key intents.
 5. Extra fields in payloads do not break formatting.
@@ -20,7 +20,7 @@ import sys
 from typing import Any, Dict, List, Mapping, Optional, Sequence
 
 from api_client import APIClientError, EventAPIClient
-from response_builder_fixed import (
+from response_builder import (
     WHATSAPP_CHAR_LIMIT,
     _extract_events,
     _format_single_event,
@@ -100,7 +100,7 @@ def _test_builder_intent(intent: str, session_context: Mapping[str, Any], **extr
 def run_smoke_test() -> None:
     base_url = os.getenv("EVENTS_API_BASE_URL", "http://127.0.0.1:8000")
     print(f"Using EVENTS_API_BASE_URL={base_url}")
-    print("Using response builder module: response_builder_fixed.py")
+    print("Using response builder module: response_builder.py")
 
     client = EventAPIClient()
     session_context: Dict[str, Any] = {"api_client": client}
