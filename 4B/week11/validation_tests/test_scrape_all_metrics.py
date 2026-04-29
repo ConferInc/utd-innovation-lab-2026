@@ -1,4 +1,5 @@
-"""Tests for scrape_all._compute_metrics, focused on the Week 10 parse-rate field."""
+"""Tests for scrape_all._compute_metrics, focused on the Week 10 parse-rate field
+and the Week 11 synthetic-second rejection counter."""
 
 from __future__ import annotations
 
@@ -29,6 +30,7 @@ def test_compute_metrics_exposes_start_datetime_parse_rate() -> None:
         validated=validated,
         deduped=deduped,
         skipped_invalid=1,
+        rejected_synthetic_second=0,
         errors=[],
     )
     assert "start_datetime_parse_rate" in metrics
@@ -45,10 +47,12 @@ def test_compute_metrics_parse_rate_handles_empty_input() -> None:
         validated=[],
         deduped=[],
         skipped_invalid=0,
+        rejected_synthetic_second=0,
         errors=[],
     )
     assert metrics["start_datetime_parse_rate"] == 0.0
     assert metrics["total_scraped"] == 0
+    assert metrics["rejected_synthetic_second"] == 0
 
 
 def test_compute_metrics_parse_rate_all_valid() -> None:
@@ -61,6 +65,32 @@ def test_compute_metrics_parse_rate_all_valid() -> None:
         validated=events,
         deduped=events,
         skipped_invalid=0,
+        rejected_synthetic_second=0,
         errors=[],
     )
     assert metrics["start_datetime_parse_rate"] == 1.0
+
+
+def test_compute_metrics_exposes_rejected_synthetic_second() -> None:
+    combined = [
+        _event(name="A", site="jkyog", start="2026-05-01T00:00:00Z"),
+        _event(name="B", site="jkyog", start="2026-05-02T00:00:35Z"),
+        _event(name="C", site="jkyog", start="2026-05-03T00:00:43Z"),
+    ]
+    validated = [combined[0]]
+    deduped = validated
+    errors = [
+        {"stage": "rejected_synthetic_second"},
+        {"stage": "rejected_synthetic_second"},
+    ]
+    metrics = _compute_metrics(
+        combined=combined,
+        validated=validated,
+        deduped=deduped,
+        skipped_invalid=0,
+        rejected_synthetic_second=2,
+        errors=errors,
+    )
+    assert metrics["rejected_synthetic_second"] == 2
+    # rejected_synthetic_second errors must NOT be counted as scraper bugs
+    assert metrics["scraper_errors_logged"] == 0
