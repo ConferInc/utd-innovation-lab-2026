@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 JKYOG_SITE_URL = "https://www.jkyog.org"
 DEFAULT_JKYOG_CALENDAR_URL = "https://www.jkyog.org/upcoming_events"
-# Extra JKYog pages to scrape for Dallas-area rows (e.g. YUVA / UTD). Merged with ``upcoming_events``.
+# Extra JKYog pages to scrape and merge with ``upcoming_events``.
 DEFAULT_JKYOG_EXTRA_PAGE_URLS: Tuple[str, ...] = ("https://www.jkyog.org/yuva",)
 
 # Reject nodes whose plain text is huge (usually a section wrapper or document root).
@@ -60,10 +60,6 @@ class JkyogScrapeResult:
     errors: List[Dict[str, Any]]
 
 
-TEMPLE_ADDRESS_FRAGMENT = "1450 north watters road"
-TEMPLE_CITY_FRAGMENT = "allen"
-
-
 def _now_iso_z() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
@@ -75,36 +71,15 @@ def _clean_text(text: str | None) -> str | None:
     return cleaned or None
 
 
-def _looks_like_dallas_event(text: str) -> bool:
-    """Match Dallas / Allen RKT rows; allow Allen + Texas without requiring ``TX``."""
-    t = text.lower()
-    if TEMPLE_ADDRESS_FRAGMENT in t or "north watters" in t:
-        return True
-    if "75013" in t:
-        return True
-    if TEMPLE_CITY_FRAGMENT in t and ("tx" in t or "texas" in t):
-        return True
-    if TEMPLE_CITY_FRAGMENT in t and any(
-        x in t for x in ("temple", "radha", "krishna", "rkt", "dallas", "watters", "1450")
-    ):
-        return True
-    if "dallas" in t and any(
-        x in t
-        for x in ("temple", "radha", "krishna", "rkt", "allen", "tx", "texas", "75013", "watters")
-    ):
-        return True
-    if "radha krishna temple" in t and "dallas" in t:
-        return True
-    if "temple of dallas" in t or "rkt dallas" in t:
-        return True
-    return False
+def _should_include_event_context(text: str) -> bool:
+    """Include all non-empty candidate events (no city-specific filtering)."""
+    return bool((text or "").strip())
 
 
 def _rich_card_context_text(card: BeautifulSoup) -> str:
     """
-    Include a few ancestor levels so venue lines split across DOM nodes still match the Dallas
-    filter and date extraction sees full copy. Bounded (fewer levels than before) so a wrong
-    root node does not pull in the whole page.
+    Include a few ancestor levels so date/location lines split across DOM nodes still
+    parse correctly. Bounded so a wrong root node does not pull in the whole page.
     """
     chunks: List[str] = []
     seen: set[str] = set()
@@ -181,7 +156,7 @@ def _extract_embedded_upcoming_events(html: str, page_url: str) -> List[Dict[str
         context = " ".join(
             part for part in (title, subtitle, city, address, event_location, tz_name) if part
         )
-        if not _looks_like_dallas_event(context):
+        if not _should_include_event_context(context):
             continue
 
         start_iso = _normalize_iso_utc(_extract_escaped_field(block, "StartTime"))
@@ -351,7 +326,7 @@ def scrape_jkyog_upcoming_events(
             try:
                 card_text = _clean_text(card.get_text(" ", strip=True)) or ""
                 rich_text = _clean_text(_rich_card_context_text(card)) or card_text
-                if not _looks_like_dallas_event(rich_text):
+                if not _should_include_event_context(rich_text):
                     continue
 
                 link = None
@@ -405,7 +380,7 @@ def scrape_jkyog_upcoming_events(
 
     if not events:
         errors.append(
-            {"source": "jkyog", "stage": "filter", "url": calendar_url, "error": "No Dallas/Allen events found"}
+            {"source": "jkyog", "stage": "filter", "url": calendar_url, "error": "No events found"}
         )
 
     return JkyogScrapeResult(events=events, errors=errors)
