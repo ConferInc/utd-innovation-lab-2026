@@ -51,10 +51,12 @@ def main() -> None:
     _write_json(out_path, payload)
     n_events = len(payload.get("events", []))
     n_skipped = int(payload.get("skipped_invalid_datetime", 0))
+    n_rejected_synth = int(payload.get("rejected_synthetic_second", 0))
     metrics = payload.get("metrics") or {}
     n_scraper_errors = int(metrics.get("scraper_errors_logged", 0))
     print(f"Wrote {n_events} events to {out_path}")
     print(f"Skipped (missing/invalid start_datetime): {n_skipped}")
+    print(f"Rejected (synthetic seconds != 0): {n_rejected_synth}")
     print(f"Scraper errors logged: {n_scraper_errors}")
     if metrics:
         parse_rate_pct = float(metrics.get("start_datetime_parse_rate", 0.0)) * 100.0
@@ -63,6 +65,7 @@ def main() -> None:
             f"total={int(metrics.get('total_scraped', 0))} "
             f"parsed_dt={int(metrics.get('passed_start_datetime_parse', 0))} "
             f"parse_rate={parse_rate_pct:.1f}% "
+            f"rejected_synth={int(metrics.get('rejected_synthetic_second', 0))} "
             f"category_not_other={int(metrics.get('passed_category_not_other', 0))} "
             f"duplicates={int(metrics.get('duplicate_count', 0))} "
             f"deduped={int(metrics.get('deduped_event_count', 0))}"

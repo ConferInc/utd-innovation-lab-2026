@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-from .datetime_extract import is_valid_storage_datetime
+from .datetime_extract import is_valid_storage_datetime, parse_storage_datetime
 from .http_client import RespectfulHttpClient, ScraperConfig
 from .jkyog import DEFAULT_JKYOG_CALENDAR_URL, scrape_jkyog_upcoming_events
 from .radhakrishnatemple import DEFAULT_TEMPLE_HOMEPAGE_URL, scrape_radhakrishnatemple
@@ -30,6 +30,7 @@ def _compute_metrics(
     validated: List[Dict[str, Any]],
     deduped: List[Dict[str, Any]],
     skipped_invalid: int,
+    rejected_synthetic_second: int,
     errors: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     raw_count_by_source_site = Counter(
@@ -45,8 +46,14 @@ def _compute_metrics(
         1 for event in validated if str(event.get("category") or "other").strip().lower() != "other"
     )
     duplicate_count = len(validated) - len(deduped)
+    ignored_error_stages = {
+        "missing_or_invalid_start_datetime",
+        "rejected_synthetic_second",
+    }
     scraper_errors_logged = sum(
-        1 for error in errors if str(error.get("stage") or "").strip().lower() != "missing_or_invalid_start_datetime"
+        1
+        for error in errors
+        if str(error.get("stage") or "").strip().lower() not in ignored_error_stages
     )
     total_scraped = len(combined)
     # Observability signal for the data-quality funnel (Week 10): share of scraped
@@ -59,6 +66,7 @@ def _compute_metrics(
         "total_scraped": total_scraped,
         "passed_start_datetime_parse": len(validated),
         "failed_start_datetime_parse": skipped_invalid,
+        "rejected_synthetic_second": rejected_synthetic_second,
         "start_datetime_parse_rate": start_datetime_parse_rate,
         "passed_category_not_other": passed_category_not_other,
         "duplicate_count": duplicate_count,
@@ -85,10 +93,12 @@ def scrape_all_events(
         "events": [ {event_payload}, ... ],
         "errors": [ {source, stage, url, error}, ... ],
         "skipped_invalid_datetime": int,
+        "rejected_synthetic_second": int,
         "metrics": {
           "total_scraped": int,
           "passed_start_datetime_parse": int,
           "failed_start_datetime_parse": int,
+          "rejected_synthetic_second": int,
           "start_datetime_parse_rate": float,  # validated / total, in [0.0, 1.0]
           "passed_category_not_other": int,
           "duplicate_count": int,
@@ -112,6 +122,7 @@ def scrape_all_events(
 
         errors: List[Dict[str, Any]] = [*temple.errors, *jkyog.errors]
         skipped_invalid = 0
+        rejected_synthetic_second = 0
         validated: List[Dict[str, Any]] = []
         for event in combined:
             if not is_valid_storage_datetime(event.get("start_datetime")):
@@ -123,6 +134,26 @@ def scrape_all_events(
                         "url": event.get("source_url", ""),
                         "name": event.get("name"),
                         "detail": "start_datetime missing or not parseable by storage layer",
+                    }
+                )
+                continue
+            # Week 11 data-quality guard: real calendar times are minute-granular
+            # (HH:MM:00). Non-zero seconds typically come from dateutil fuzzy
+            # parsing inheriting `now_local` seconds when source text lacks an
+            # explicit time. See Week 10 Task 2 analysis.
+            parsed_start = parse_storage_datetime(event.get("start_datetime"))
+            if parsed_start is not None and parsed_start.second != 0:
+                rejected_synthetic_second += 1
+                errors.append(
+                    {
+                        "source": event.get("source_site", "unknown"),
+                        "stage": "rejected_synthetic_second",
+                        "url": event.get("source_url", ""),
+                        "name": event.get("name"),
+                        "detail": (
+                            "start_datetime seconds != 0; treated as synthetic "
+                            "timestamp from fuzzy parse fallback"
+                        ),
                     }
                 )
                 continue
@@ -143,6 +174,7 @@ def scrape_all_events(
             validated=validated,
             deduped=deduped,
             skipped_invalid=skipped_invalid,
+            rejected_synthetic_second=rejected_synthetic_second,
             errors=errors,
         )
         logger.info("scrape quality metrics: %s", metrics)
@@ -152,6 +184,7 @@ def scrape_all_events(
             "events": deduped,
             "errors": errors,
             "skipped_invalid_datetime": skipped_invalid,
+            "rejected_synthetic_second": rejected_synthetic_second,
             "metrics": metrics,
         }
     finally:
