@@ -120,3 +120,9 @@ def test_construct_webhook_event_verifies_signature(monkeypatch):
     assert event["id"] == "evt_test"
     assert event["type"] == "payment_intent.succeeded"
     assert event["data"]["object"]["id"] == "pi_123"
+
+def test_stripe_router_imports_cleanly():
+    import main
+
+    assert main.app is not None
+    
