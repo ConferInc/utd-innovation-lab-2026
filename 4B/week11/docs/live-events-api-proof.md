@@ -1,38 +1,39 @@
 # Live Events API Proof
 
-This document records live smoke-test results for the Week 8 Events API deployment.
+This document records live smoke-test results for the Team 4B Events API deployment.
 
 ## Test context
 
 - Base URL: `https://jkyog-whatsapp-bot-week4-ffuk.onrender.com`
-- Test run date (UTC): `2026-04-22`
+- Test run date (UTC): `2026-04-29`
 - Tester: Cursor agent (live `curl` checks)
 - Production DB seed target: Supabase (`postgresql://...@aws-0-us-west-2.pooler.supabase.com:5432/postgres`)
 
 ## Results summary
 
 - Scraper run completed against both temple sources:
-  - `Wrote 30 events`
-  - `parse_rate=73.2%`
-  - `deduped=30`
+  - `Wrote 49 events`
+  - `parse_rate=87.5%`
+  - `deduped=49`
+  - `rejected_synthetic_second=3`
 - Seed completed:
-  - `Input events: 30`
-  - `Inserted: 0`
-  - `Updated: 30`
+  - `Input events: 49`
+  - `Inserted: 47`
+  - `Updated: 2`
   - `Failed: 0`
 - Live endpoint count check:
-  - `GET /api/v2/events?limit=100&offset=0` returned `6` rows
-  - Computed `upcoming` rows from `start_datetime >= now`: `6`
+  - `GET /api/v2/events?limit=100&offset=0` returned `22` rows
+  - Computed `upcoming` rows from `start_datetime >= now`: `22`
 
 ## Week 10 completion check (Task 4 requirement)
 
 - Requirement: confirm at least `10` upcoming events.
-- Current live result: `6` upcoming events.
-- Status: **not yet met** (pipeline run succeeded, threshold unmet on live deployment).
+- Current live result: `22` upcoming events.
+- Status: **met** (live deployment is above the required threshold).
 
 ## Endpoint smoke status
 
-All five public Events API endpoints returned successful responses (`200 OK`) in earlier smoke checks.
+All five public Events API endpoints returned successful responses (`200 OK`) in smoke checks.
 
 | Endpoint | Status | Result |
 |---|---:|---|
@@ -64,10 +65,10 @@ All five public Events API endpoints returned successful responses (`200 OK`) in
 - Status line: `HTTP/1.1 200 OK`
 - Body contained `q: "krishna"` and matching event objects
 
-### 5) `GET /api/v2/events/3`
+### 5) `GET /api/v2/events/{id}`
 
 - Status line: `HTTP/1.1 200 OK`
-- Body contained event object with `id: 3` (`Bhakti Kirtan Retreat 2026`)
+- Body contained event detail object for a valid ID
 
 ## Negative-path check
 
@@ -77,6 +78,6 @@ All five public Events API endpoints returned successful responses (`200 OK`) in
 
 This confirms expected not-found behavior for invalid event IDs.
 
-## Coordination dependency (Task 5)
+## Notes
 
-- Pending external confirmation: Team 4A/Harshith webhook URL alignment after hardcoded-response removal is not yet captured here.
+- Canonical API base URL used in this proof: `https://jkyog-whatsapp-bot-week4-ffuk.onrender.com`

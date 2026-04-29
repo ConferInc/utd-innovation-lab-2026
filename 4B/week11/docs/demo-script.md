@@ -2,6 +2,12 @@
 
 This document provides the step-by-step flow for running the Week 8 demo for the JKYog WhatsApp Bot, including local fallback instructions, database reseeding, sample API checks, and troubleshooting steps.
 
+## Canonical live API URL
+
+Use this URL consistently across demo checks and handoffs:
+
+`https://jkyog-whatsapp-bot-week4-ffuk.onrender.com`
+
 ## 1. Demo Goal
 
 The demo should show a real user message going through the bot and returning a response based on live or seeded temple event data.
@@ -86,6 +92,16 @@ curl http://127.0.0.1:8000/health/db
 ## 6. Events API Demo Checks
 
 Use these curl commands before the live demo to verify the events API is returning usable data.
+
+### Live API (canonical URL)
+```bash
+curl "https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/api/v2/events?limit=100&offset=0"
+curl "https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/api/v2/events/today"
+curl "https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/api/v2/events/recurring"
+curl "https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/api/v2/events/search?q=satsang"
+```
+
+Expected current result: upcoming events count is `22` (>= `10` threshold met).
 
 ### Get all events
 ```bash
