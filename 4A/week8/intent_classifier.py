@@ -1,203 +1,206 @@
-"""
-Intent Classifier (Week 7 Spec + Week 8/9 API Mapping)
-
-Approach: Hybrid (Rule-based + Knowledge-Based Scoring)
-
-Design:
-1. Rule-based intent classification using:
-   - Extracted entities (event_name, timeframe, program_name)
-   - Keyword matching (from Week 7 intent catalog)
-
-2. Confidence Scoring (Fully Dynamic, No Hardcoding):
-   - Jaccard similarity between message tokens and intent keywords
-   - Entity coverage score (ratio of extracted entities)
-   - Final confidence = average of keyword score and entity score
-
-3. Spec Rule:
-   - If confidence < 0.6 → return "clarification_needed"
-
-This ensures:
-- Explainable AI (no arbitrary confidence values)
-- Alignment with Week 7 intent definitions
-- API-ready outputs for Week 8/9 integration
-"""
-
+import os
+import json
 from typing import Dict
+from dotenv import load_dotenv
+
 from entity_extractor import extract_entities
 
+load_dotenv()
+
+try:
+    from google import genai
+    from google.genai import types as genai_types
+    GOOGLE_AVAILABLE = True
+except ImportError:
+    GOOGLE_AVAILABLE = False
+
 
 # -------------------------------
-# INTENT KEYWORD KB (Week 7 aligned)
+# INTENT KEYWORDS (ALL 8 INTENTS)
 # -------------------------------
 INTENT_KEYWORDS = {
-    "time_based": {
-        "today", "tomorrow", "tonight", "weekend", "week", "month",
-        "date", "dates", "when", "schedule", "upcoming", "soon"
-    },
-    "event_specific": {
-        "event", "festival", "show", "details", "about",
-        "info", "information", "attend", "ticket", "tickets"
-    },
-    "recurring_schedule": {
-        "every", "weekly", "daily", "monthly", "recurring", "regular",
-        "ongoing", "program", "series", "class", "classes"
-    },
     "logistics": {
-        "parking", "where", "address", "location", "directions", "venue",
-        "entry", "entrance", "map", "getting", "arrive"
+        "parking", "where", "address", "location", "directions",
+        "map", "how to get", "route", "food", "prasad"
     },
     "sponsorship": {
-        "donate", "donation", "sponsor", "sponsorship", "contribute",
-        "support", "partner", "fund", "funding", "money"
+        "donate", "donation", "sponsor", "sponsorship",
+        "contribute", "seva", "fund", "support"
     },
     "discovery": {
-        "events", "event", "happening", "going", "any", "discover",
-        "find", "browse", "upcoming", "around"
+        "events", "happening", "going on", "any events",
+        "upcoming", "what's happening", "what is happening"
     },
     "no_results_check": {
-        "3am", "midnight", "late night", "overnight", "after midnight", "before dawn"
+        "3am", "2am", "4am", "midnight", "overnight",
+        "late night", "after midnight", "before dawn"
+    },
+    "time_based": {
+        "today", "tomorrow", "tonight", "this week", "this weekend",
+        "next week", "date", "time", "when", "schedule",
+        "timing", "start time", "end time"
+    },
+    "event_specific": {
+        "event", "program", "festival", "session",
+        "workshop", "class", "celebration",
+        "aarti", "darshan", "retreat", "seminar"
+    },
+    "recurring_schedule": {
+        "daily", "every day", "weekly", "every week",
+        "every monday", "every tuesday", "every weekend",
+        "recurring", "regular", "routine",
+        "hours", "open hours", "closing time", "timings"
     },
     "ambiguous": {
-        "help", "question", "something", "anything", "info", "information"
-    },
+        "info", "information", "details", "tell me more",
+        "help", "something", "stuff", "things",
+        "not sure", "anything"
+    }
 }
 
 
 # -------------------------------
-# TOKENIZATION
+# SYSTEM PROMPT (LLM)
+# -------------------------------
+_SYSTEM_PROMPT = """You are an intent classifier for a WhatsApp bot for JKYog Radha Krishna Temple.
+
+Classify the user message into exactly one of these intents:
+- time_based
+- event_specific
+- recurring_schedule
+- logistics
+- sponsorship
+- discovery
+- no_results_check
+- ambiguous
+
+Respond ONLY with JSON:
+{"intent": "<intent>", "confidence": <float>}
+"""
+
+
+# -------------------------------
+# HELPERS
 # -------------------------------
 def tokenize(text: str) -> set:
     return set(text.lower().split())
 
 
-# -------------------------------
-# JACCARD SIMILARITY
-# -------------------------------
 def jaccard_similarity(set1: set, set2: set) -> float:
     if not set1 or not set2:
         return 0.0
     return len(set1 & set2) / len(set1 | set2)
 
 
-# -------------------------------
-# ENTITY COVERAGE SCORE
-# -------------------------------
-INTENT_ENTITY_FIELDS = {
-    "time_based": {"timeframe"},
-    "event_specific": {"event_name"},
-    "recurring_schedule": {"program_name"},
-    "logistics": {"event_name"},
-    "sponsorship": set(),
-    "discovery": set(),
-    "no_results_check": {"timeframe"},
-    "ambiguous": set(),
-}
-
-
-def compute_entity_score(intent: str, entities: dict) -> float:
-    required_fields = INTENT_ENTITY_FIELDS.get(intent, set())
-    if not required_fields:
-        return 0.0
-
-    matched_fields = sum(1 for field in required_fields if entities.get(field))
-    return matched_fields / len(required_fields)
+def compute_entity_score(entities: dict) -> float:
+    entity_values = [
+        entities.get("timeframe"),
+        entities.get("event_name"),
+        entities.get("program_name"),
+    ]
+    extracted = sum(1 for v in entity_values if v)
+    return extracted / len(entity_values)
 
 
 # -------------------------------
-# FINAL KB SCORE
+# GEMINI CLASSIFIER (OPTIONAL)
 # -------------------------------
-def compute_kb_score(message: str, intent: str, entities: dict) -> float:
+def _classify_with_gemini(user_message: str) -> Dict | None:
+    if not GOOGLE_AVAILABLE or not os.getenv("GOOGLE_API_KEY"):
+        return None
+
+    try:
+        client = genai.Client(api_key=os.getenv("GOOGLE_API_KEY"))
+
+        response = client.models.generate_content(
+            model=os.getenv("GEMINI_MODEL_INTENT", "gemini-2.5-flash-lite"),
+            contents=user_message,
+            config=genai_types.GenerateContentConfig(
+                system_instruction=_SYSTEM_PROMPT,
+                temperature=0,
+                max_output_tokens=60,
+            ),
+        )
+
+        result = json.loads(response.text.strip())
+        return {
+            "intent": result.get("intent", "ambiguous"),
+            "confidence": float(result.get("confidence", 0.0)),
+        }
+
+    except Exception:
+        return None
+
+
+# -------------------------------
+# FIXED JACCARD CLASSIFIER
+# -------------------------------
+def _classify_with_jaccard(message: str, entities: dict) -> Dict:
+    msg = message.lower()
     tokens = tokenize(message)
 
-    intent_keywords = INTENT_KEYWORDS.get(intent, set())
-    keyword_score = jaccard_similarity(tokens, intent_keywords)
+    # -------- Intent Routing --------
+    if entities.get("event_name"):
+        intent = "event_specific"
+    elif entities.get("program_name"):
+        intent = "recurring_schedule"
+    elif entities.get("timeframe"):
+        intent = "time_based"
+    elif any(word in msg for word in INTENT_KEYWORDS["logistics"]):
+        intent = "logistics"
+    elif any(word in msg for word in INTENT_KEYWORDS["sponsorship"]):
+        intent = "sponsorship"
+    elif any(word in msg for word in INTENT_KEYWORDS["no_results_check"]):
+        intent = "no_results_check"
+    elif any(word in msg for word in INTENT_KEYWORDS["discovery"]):
+        intent = "discovery"
+    else:
+        intent = "ambiguous"
 
-    entity_score = compute_entity_score(intent, entities)
+    # -------- Scores (FIXED) --------
+    keyword_score = jaccard_similarity(tokens, INTENT_KEYWORDS.get(intent, set()))
+    entity_score = compute_entity_score(entities)
 
-    scores = [keyword_score]
-    if INTENT_ENTITY_FIELDS.get(intent):
-        scores.append(entity_score)
+    # -------- Balanced Confidence --------
+    if intent in ["event_specific", "time_based", "recurring_schedule"]:
+        confidence = 0.6 * entity_score + 0.4 * keyword_score
+    elif intent in ["logistics", "sponsorship"]:
+        confidence = 0.4 * entity_score + 0.6 * keyword_score
+    else:
+        confidence = 0.2 * entity_score + 0.8 * keyword_score
 
-    confidence = sum(scores) / len(scores)
-
-    return round(confidence, 2)
+    return {
+        "intent": intent,
+        "confidence": round(confidence, 2),
+    }
 
 
 # -------------------------------
 # MAIN CLASSIFIER
 # -------------------------------
 def classify(message: str) -> Dict:
-    msg = message.lower()
     entities = extract_entities(message)
 
-    # -------------------------------
-    # INTENT MAPPING (8 intents only)
-    # -------------------------------
-    if entities.get("event_name"):
-        intent = "event_specific"
+    ai_result = _classify_with_gemini(message)
 
-    elif entities.get("program_name"):
-        intent = "recurring_schedule"
-
-    elif entities.get("timeframe"):
-        intent = "time_based"
-
-    elif any(word in msg for word in INTENT_KEYWORDS["logistics"]):
-        intent = "logistics"
-
-    elif any(word in msg for word in INTENT_KEYWORDS["sponsorship"]):
-        intent = "sponsorship"
-
-    elif any(phrase in msg for phrase in [
-        "what's happening", "what is happening", "any events", "events"
-    ]):
-        intent = "discovery"
-
-    elif any(word in msg for word in INTENT_KEYWORDS["no_results_check"]):
-        intent = "no_results_check"
-
+    if not ai_result or ai_result["confidence"] < 0.6:
+        result = _classify_with_jaccard(message, entities)
     else:
-        intent = "ambiguous"
+        result = ai_result
 
-    # -------------------------------
-    # CONFIDENCE
-    # -------------------------------
-    confidence = compute_kb_score(message, intent, entities)
-
-    # -------------------------------
-    # SPEC RULE
-    # -------------------------------
-    if confidence < 0.6:
-        return {
-            "intent": "clarification_needed",
-            "confidence": confidence,
-            "entities": {
-                "timeframe": entities.get("timeframe"),
-                "event_name": entities.get("event_name"),
-                "program_name": entities.get("program_name"),
-            },
-            "api_call": {"action": "clarification_needed"}
-        }
-
-    # -------------------------------
-    # API MAPPING
-    # -------------------------------
-    api_call = map_to_api(intent, entities)
+    if result["confidence"] < 0.6 and result["intent"] == "ambiguous":
+        result["intent"] = "clarification_needed"
 
     return {
-        "intent": intent,
-        "confidence": confidence,
-        "entities": {
-            "timeframe": entities.get("timeframe"),
-            "event_name": entities.get("event_name"),
-            "program_name": entities.get("program_name"),
-        },
-        "api_call": api_call
+        "intent": result["intent"],
+        "confidence": result["confidence"],
+        "entities": entities,
+        "api_call": map_to_api(result["intent"], entities),
     }
 
 
 # -------------------------------
-# API MAPPING (Week 8/9 Spec)
+# API MAPPING
 # -------------------------------
 def map_to_api(intent: str, entities: dict) -> dict:
     event_name = entities.get("event_name")
@@ -208,12 +211,12 @@ def map_to_api(intent: str, entities: dict) -> dict:
             return {
                 "endpoint": "/api/v2/events/today",
                 "method": "GET",
-                "params": {}
+                "params": {},
             }
         return {
             "endpoint": "/api/v2/events",
             "method": "GET",
-            "params": {"start_date": timeframe}
+            "params": {"start_date": timeframe},
         }
 
     elif intent == "event_specific":
@@ -221,14 +224,14 @@ def map_to_api(intent: str, entities: dict) -> dict:
             "endpoint": "/api/v2/events/search",
             "method": "GET",
             "params": {"q": event_name},
-            "follow_up": "resolve_event_id_and_fetch_details"
+            "follow_up": "resolve_event_id_and_fetch_details",
         }
 
     elif intent == "recurring_schedule":
         return {
             "endpoint": "/api/v2/events/recurring",
             "method": "GET",
-            "params": {}
+            "params": {},
         }
 
     elif intent == "logistics":
@@ -238,7 +241,7 @@ def map_to_api(intent: str, entities: dict) -> dict:
             "endpoint": "/api/v2/events/search",
             "method": "GET",
             "params": {"q": event_name},
-            "follow_up": "fetch_event_details_for_logistics"
+            "follow_up": "fetch_event_details_for_logistics",
         }
 
     elif intent == "sponsorship":
@@ -247,26 +250,26 @@ def map_to_api(intent: str, entities: dict) -> dict:
                 "endpoint": "/api/v2/events/search",
                 "method": "GET",
                 "params": {"q": event_name},
-                "follow_up": "extract_sponsorship_tiers"
+                "follow_up": "extract_sponsorship_tiers",
             }
         return {
             "endpoint": "/api/v2/events",
             "method": "GET",
-            "params": {"limit": 5}
+            "params": {"limit": 5},
         }
 
     elif intent == "discovery":
         return {
             "endpoint": "/api/v2/events",
             "method": "GET",
-            "params": {"limit": 5}
+            "params": {"limit": 5},
         }
 
     elif intent == "no_results_check":
         return {
             "endpoint": "/api/v2/events",
             "method": "GET",
-            "params": {"limit": 3}
+            "params": {"limit": 3},
         }
 
     return {"action": "clarification_needed"}
