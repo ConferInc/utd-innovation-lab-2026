@@ -16,7 +16,7 @@ Interactive OpenAPI: **`/docs`** when the app is running.
 
 ## Base URL
 
-- Deployed: `https://<your-service>.onrender.com`
+- Deployed (Team 4B canonical): `https://jkyog-whatsapp-bot-week4-ffuk.onrender.com`
 - Local: `http://127.0.0.1:8000`
 
 Export a token for curl examples:
