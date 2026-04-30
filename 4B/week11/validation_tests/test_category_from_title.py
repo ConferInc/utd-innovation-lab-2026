@@ -18,6 +18,7 @@ from events.scrapers.category_from_title import guess_event_category
     "text,expected",
     [
         ("Hanuman Jayanti Celebration", "festival"),
+        ("International Yoga Day", "festival"),
         ("Community Health Fair — Biometric Screening", "health"),
         ("Bhakti Kirtan Retreat Weekend", "retreat"),
         ("Weekly Satsang and Aarti", "satsang"),

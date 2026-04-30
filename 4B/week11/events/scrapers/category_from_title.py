@@ -28,6 +28,8 @@ CATEGORY_KEYWORDS: Final[dict[str, tuple[str, ...]]] = {
         "navratri",
         "diwali",
         "holi",
+        "international yoga day",
+        "yoga day",
         "janmashtami",
         "rama navami",
         "ram navami",

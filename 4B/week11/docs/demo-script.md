@@ -1,6 +1,6 @@
 # Demo Script — April 15 Consolidated Demo Sprint
 
-This document provides the step-by-step flow for running the Week 8 demo for the JKYog WhatsApp Bot, including local fallback instructions, database reseeding, sample API checks, and troubleshooting steps.
+This document provides the step-by-step flow for running the Week 11 demo for the JKYog WhatsApp Bot, including local fallback instructions, database reseeding, sample API checks, and troubleshooting steps.
 
 ## Canonical live API URL
 
@@ -21,6 +21,8 @@ Expected demo flow:
 ## 2. Local Fallback Startup
 
 If the deployed environment is unavailable or unstable during the demo, run the app locally.
+
+Run these commands from the `4B/week11/` directory.
 
 ### Start the app locally
 
@@ -46,7 +48,7 @@ http://127.0.0.1:8000
 
 Before starting the demo, confirm the following:
 
-The Week 8 branch is up to date
+The Week 11 branch is up to date
 Required dependencies are installed
 The database is reachable
 The app starts with no import errors
@@ -59,12 +61,30 @@ Stripe webhook route matches main.py registration (/api/stripe/webhook)
 
 If the events database is empty, stale, or inconsistent, reseed or re-ingest before the demo.
 
-### General reseed step
+Run these commands from the `4B/week11/` directory.
 
-Run the team’s event ingestion or seed script from the Week 8 project directory.
+### Scrape fresh data (writes `data/scraped_events.json`)
+
 ```bash
-python <seed_or_ingestion_script>.py
+python -m scripts.scrape_events
 ```
+
+Expected output includes counters like:
+- `Wrote <N> events`
+- `Scrape quality: ... parse_rate=... deduped=... rejected_synth=...`
+
+### Seed the database from the scrape output
+
+```bash
+python -m scripts.seed_from_scraped_json --file data/scraped_events.json
+```
+
+### Offline dev (fixture snapshot)
+
+```bash
+python -m scripts.seed_from_scraped_json --fixture
+```
+
 After reseeding, verify:
 
 Events exist in the database
