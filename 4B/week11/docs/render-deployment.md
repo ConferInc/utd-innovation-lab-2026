@@ -15,12 +15,27 @@ The deployment uses the following tools and services:
 
 ## 2. Render Configuration
 
+### Live deployment URL
+
+The Team 4B canonical live URL is:
+
+`https://jkyog-whatsapp-bot-week4-ffuk.onrender.com`
+
+This is the URL that Team 4A's bot calls, that the demo script targets, and
+that all live smoke tests run against. Note that it does **not** match the
+`name:` field in the yaml below — Render captured the `-week4-ffuk` suffix
+on first deploy because the requested name was already taken, and the
+service has kept that URL ever since. Do **not** rename the service on the
+Render dashboard; renaming mints a new URL and breaks every integration.
+
+### render.yaml
+
 This project includes a `render.yaml` file with the setup below:
 
 ```yaml
 services:
   - type: web
-    name: jkyog-whatsapp-bot-week8
+    name: jkyog-whatsapp-bot-week8  # cosmetic; live URL is jkyog-whatsapp-bot-week4-ffuk
     env: python
     plan: free
     buildCommand: |

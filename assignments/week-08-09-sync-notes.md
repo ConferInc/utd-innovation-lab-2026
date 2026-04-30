@@ -129,9 +129,11 @@
 
 **HTTPS base URL (no trailing slash):**
 
-`https://jkyog-whatsapp-bot-week8.onrender.com`
+`https://jkyog-whatsapp-bot-week4-ffuk.onrender.com`
 
-This matches the Render **service name** `jkyog-whatsapp-bot-week8` in [`4B/week8/render.yaml`](../4B/week8/render.yaml). After the first deploy, **confirm the exact URL** in the Render dashboard (Settings → your Web Service → URL) and use that value if it differs.
+This is the canonical URL used by every live smoke check, demo script, and proof artifact on Team 4B (see [Week 11 demo script](../4B/week11/docs/demo-script.md) and [Week 11 live events API proof](../4B/week11/docs/live-events-api-proof.md)).
+
+> Note: the [`4B/week11/render.yaml`](../4B/week11/render.yaml) service-name string still reads `jkyog-whatsapp-bot-week8`, but the deployed Render service captured the URL above (with the `-week4-ffuk` suffix) on first deploy and has kept it ever since. The yaml service-name string is cosmetic at this point — Render uses the dashboard URL. Do not rename the service on the dashboard; that would mint a new URL and break every existing integration.
 
 **Slack (manual checklist):**
 
@@ -152,7 +154,7 @@ All paths below are **public GET** — **no** `Authorization` header required. S
 | `GET {BASE}/api/v2/events/{event_id}` |
 
 Replace `{BASE}` with the URL above (no trailing slash). Example:  
-`https://jkyog-whatsapp-bot-week8.onrender.com/api/v2/events/today`
+`https://jkyog-whatsapp-bot-week4-ffuk.onrender.com/api/v2/events/today`
 
 ## Post-deploy checklist (operator)
 
