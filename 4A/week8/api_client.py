@@ -59,7 +59,7 @@ class APIConfig:
     base_url: str = DEFAULT_BASE_URL
     events_base_path: str = DEFAULT_EVENTS_BASE_PATH
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
-    bearer_token: Optional[str] = os.getenv("TEAM4B_API_BEARER_TOKEN")
+    bearer_token: Optional[str] = os.getenv("EVENTS_API_BEARER_TOKEN")
 
     def normalized_base_url(self) -> str:
         return self.base_url.rstrip("/")
