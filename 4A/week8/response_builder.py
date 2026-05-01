@@ -19,6 +19,11 @@ from api_client import (
     EventAPIClient,
 )
 
+try:
+    from schedule import get_current_schedule
+except Exception:
+    get_current_schedule = None
+
 
 WHATSAPP_CHAR_LIMIT = 4096
 MISSING_FIELD_TEXT = "Not listed on the event page"
@@ -53,6 +58,13 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
     query = _resolve_query(classified_intent, session_context)
 
     try:
+        if intent == "recurring_schedule":
+            if get_current_schedule is not None:
+                active_programs = get_current_schedule()
+                return _truncate_whatsapp(_format_active_recurring_schedule(active_programs))
+
+            return _build_event_list_response(client, intent="recurring_events", query=query)
+
         if intent in {"event_list", "event_search", "today_events", "recurring_events"}:
             return _build_event_list_response(client, intent=intent, query=query)
 
@@ -123,6 +135,10 @@ def _resolve_intent(classified_intent: Mapping[str, Any]) -> str:
         "today": "today_events",
         "today_events": "today_events",
         "events_today": "today_events",
+        "recurring_schedule": "recurring_schedule",
+        "weekly_schedule": "recurring_schedule",
+        "current_schedule": "recurring_schedule",
+        "temple_schedule": "recurring_schedule",
         "recurring": "recurring_events",
         "recurring_events": "recurring_events",
         "event_detail": "single_event_detail",
@@ -219,7 +235,11 @@ def _resolve_single_event(
 ) -> Optional[Dict[str, Any]]:
     if event_id is not None:
         try:
-            return client.get_event_by_id(event_id)
+            payload = client.get_event_by_id(event_id)
+            wrapped_event = payload.get("event")
+            if isinstance(wrapped_event, dict):
+                return dict(wrapped_event)
+            return payload
         except APIClientError:
             raise
 
@@ -256,6 +276,22 @@ def _find_exact_name_match(events: Sequence[Mapping[str, Any]], query: str) -> O
         if name == normalized_query:
             return dict(event)
     return None
+
+
+def _format_active_recurring_schedule(active_programs: Any) -> str:
+    if not isinstance(active_programs, Sequence) or isinstance(active_programs, (str, bytes)):
+        active_programs = []
+
+    programs = [str(program).strip() for program in active_programs if str(program).strip()]
+    if not programs:
+        return "There are no recurring temple programs currently active right now."
+
+    lines = [
+        "*Currently active temple programs:*",
+        "",
+    ]
+    lines.extend(f"- {program}" for program in programs)
+    return "\n".join(lines).strip()
 
 
 def _format_single_event(event: Mapping[str, Any]) -> str:
