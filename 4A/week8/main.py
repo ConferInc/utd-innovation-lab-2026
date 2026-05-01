@@ -8,7 +8,6 @@ from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 from dotenv import load_dotenv
 
-
 from intent_classifier import classify
 from response_builder import build_response
 
@@ -21,7 +20,6 @@ logger = logging.getLogger("main")
 load_dotenv()
 
 app = FastAPI(title="JKYog WhatsApp Bot")
-
 
 ACTIVE_SESSIONS = {}
 
@@ -44,7 +42,7 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         send_whatsapp_message(to=sender_phone, body="Namaste! 🙏 Welcome to the JKYog Temple bot. You can ask me about upcoming events, parking info, or specific schedules like Sunday Satsang.")
         return
 
-    
+    # 1. AI Classification
     try:
         raw_classification = classify(body_text)
         logger.info(f"AI CLASSIFICATION: {raw_classification}")
@@ -52,8 +50,16 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         logger.error(f"Classification Failed: {e}", exc_info=True)
         raw_classification = {"intent": "unknown", "entities": {}, "confidence": 0.0}
 
+    # 2. WEEK 11 TASK 4: Bounded Session Management (Max 1000)
+    MAX_SESSIONS = 1000
     
     if sender_phone not in ACTIVE_SESSIONS:
+        # Evict the oldest session if we hit the limit to prevent memory leaks
+        if len(ACTIVE_SESSIONS) >= MAX_SESSIONS:
+            oldest_session_key = next(iter(ACTIVE_SESSIONS))
+            del ACTIVE_SESSIONS[oldest_session_key]
+            logger.warning(f"Session limit reached. Evicted oldest session: {oldest_session_key}")
+
         ACTIVE_SESSIONS[sender_phone] = {
             "user_id": str(uuid.uuid4()),
             "conversation_id": str(uuid.uuid4()),
@@ -74,18 +80,18 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         "selected_event_id": session_data["selected_event_id"]
     }
 
-    
+    # 3. Build Response
     try:
         reply_text = build_response(raw_classification, context)
     except Exception as e:
         logger.error(f"Response Builder Failed: {e}", exc_info=True)
         reply_text = ""
 
-    
+    # 4. Graceful Fallback
     if not reply_text or len(reply_text.strip()) == 0 or raw_classification.get("intent") in ["clarification_needed", "ambiguous", "unknown"]:
         reply_text = "I'm having trouble understanding that right now. Try: 'What events are happening this weekend?'"
 
-    
+    # 5. Send Message
     try:
         send_whatsapp_message(to=sender_phone, body=reply_text)
         elapsed = int((time.monotonic() - start_time) * 1000)
