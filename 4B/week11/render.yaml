@@ -1,0 +1,21 @@
+# Live deployment URL: https://jkyog-whatsapp-bot-week4-ffuk.onrender.com
+# The service-name string below reads `jkyog-whatsapp-bot-week8`, but the
+# Render service captured the URL above (with the `-week4-ffuk` suffix) on
+# first deploy and has kept it ever since. Do NOT rename this service on
+# the Render dashboard — that would mint a new URL and break every
+# existing integration (Team 4A `EVENTS_API_BASE_URL`, Twilio webhook,
+# Stripe webhook). The yaml service-name string is cosmetic at this point.
+services:
+  - type: web
+    name: jkyog-whatsapp-bot-week8
+    env: python
+    plan: free
+    buildCommand: |
+      pip install --upgrade pip
+      pip install -r 4B/week8/requirements.txt
+    startCommand: |
+      uvicorn 4B.week8.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+

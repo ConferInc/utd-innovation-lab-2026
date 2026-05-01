@@ -1,0 +1,47 @@
+{
+  "base_url": "http://localhost:3001",
+  "description": "Mock server configuration for Week 5 offline integration testing",
+  "routes": {
+    "/mock/webhook/whatsapp": {
+      "method": "POST",
+      "description": "Mocks successful WhatsApp webhook processing",
+      "response": {
+        "status": "success",
+        "reply_text": "Temple opens at 9 AM and closes at 7 PM",
+        "next_state": "VISITOR_INQUIRY",
+        "session_token": "mock-session-123"
+      }
+    },
+    "/mock/create-payment": {
+      "method": "POST",
+      "description": "Mocks Stripe donation/payment flow",
+      "response": {
+        "donation_link": "https://buy.stripe.com/test_dallas",
+        "message": "Thank you for your donation. Please complete payment using the link."
+      }
+    },
+    "/mock/maps": {
+      "method": "GET",
+      "description": "Mocks Google Maps directions flow",
+      "response": {
+        "text": "🗺️ 12 mi • 22 mins\n1. Head north (0.5 mi)\n2. Turn right onto Temple Rd (1.2 mi)\n3. Destination will be on the left."
+      }
+    },
+    "/mock/calendar": {
+      "method": "GET",
+      "description": "Mocks calendar event lookup flow",
+      "response": [
+        {
+          "start": "2026-03-07T10:00:00",
+          "summary": "Morning Meditation & Kriya Yoga Class",
+          "location": "Dallas Temple"
+        },
+        {
+          "start": "2026-03-07T18:00:00",
+          "summary": "Evening Kirtan & Discourse",
+          "location": "Irving Temple"
+        }
+      ]
+    }
+  }
+}
