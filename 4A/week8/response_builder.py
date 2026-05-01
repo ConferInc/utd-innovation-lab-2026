@@ -20,7 +20,7 @@ from api_client import (
 )
 
 try:
-    from schedule import get_current_schedule
+from recurring_handler import get_current_schedule
 except Exception:
     get_current_schedule = None
 
@@ -60,7 +60,10 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
     try:
         if intent == "recurring_schedule":
             if get_current_schedule is not None:
-                active_programs = get_current_schedule()
+                from zoneinfo import ZoneInfo
+
+now = datetime.now(ZoneInfo("America/Chicago"))
+active_programs = get_current_schedule(now)
                 return _truncate_whatsapp(_format_active_recurring_schedule(active_programs))
 
             return _build_event_list_response(client, intent="recurring_events", query=query)
