@@ -20,7 +20,7 @@ from api_client import (
 )
 
 try:
-from recurring_handler import get_current_schedule
+    from schedule import get_current_schedule
 except Exception:
     get_current_schedule = None
 
@@ -53,17 +53,14 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
     session_context = session_context or {}
 
     client = _get_api_client(session_context)
-    intent = _resolve_intent(classified_intent)
+    intent = _resolve_intent(classified_intent, session_context)
     event_id = _resolve_event_id(classified_intent, session_context)
     query = _resolve_query(classified_intent, session_context)
 
     try:
         if intent == "recurring_schedule":
             if get_current_schedule is not None:
-                from zoneinfo import ZoneInfo
-
-now = datetime.now(ZoneInfo("America/Chicago"))
-active_programs = get_current_schedule(now)
+                active_programs = get_current_schedule()
                 return _truncate_whatsapp(_format_active_recurring_schedule(active_programs))
 
             return _build_event_list_response(client, intent="recurring_events", query=query)
@@ -126,8 +123,12 @@ def _get_api_client(session_context: Mapping[str, Any]) -> EventAPIClient:
     return EventAPIClient(config=config, headers=headers)
 
 
-def _resolve_intent(classified_intent: Mapping[str, Any]) -> str:
+def _resolve_intent(
+    classified_intent: Mapping[str, Any],
+    session_context: Optional[Mapping[str, Any]] = None,
+) -> str:
     raw_intent = str(classified_intent.get("intent", "")).strip().lower()
+    session_context = session_context or {}
 
     aliases = {
         "event_list": "event_list",
@@ -154,9 +155,32 @@ def _resolve_intent(classified_intent: Mapping[str, Any]) -> str:
         "sponsorship_tiers": "sponsorship",
         "logistics": "logistics",
         "parking": "logistics",
+        "parking_info": "logistics",
+        "food_info": "logistics",
+        "transportation_info": "logistics",
+        "venue_info": "logistics",
+        "follow_up_parking": "logistics",
+        "follow_up_logistics": "logistics",
         "logistics_parking": "logistics",
+        "sponsorship_info": "sponsorship",
+        "seva_info": "sponsorship",
+        "donation_info": "sponsorship",
+        "follow_up_sponsorship": "sponsorship",
+        "follow_up_seva": "sponsorship",
     }
-    return aliases.get(raw_intent, raw_intent or "event_list")
+
+    resolved_intent = aliases.get(raw_intent, raw_intent)
+
+    # Generic follow-up intents need session memory from main.py.
+    # Example: user asks for an event, then says "what about parking?" or "for it?".
+    # selected_event_id is consumed in _resolve_event_id(...); last_intent is used only
+    # when the classifier returns a generic follow-up label instead of a specific intent.
+    if resolved_intent in {"follow_up", "followup", "context_follow_up", "clarification"}:
+        last_intent = str(session_context.get("last_intent", "")).strip().lower()
+        if last_intent:
+            return aliases.get(last_intent, last_intent)
+
+    return resolved_intent or "event_list"
 
 
 def _resolve_query(classified_intent: Mapping[str, Any], session_context: Mapping[str, Any]) -> Optional[str]:
@@ -180,6 +204,8 @@ def _resolve_event_id(classified_intent: Mapping[str, Any], session_context: Map
     candidates = [
         classified_intent.get("event_id"),
         classified_intent.get("id"),
+        # Enables follow-up questions like "Is there parking for it?"
+        # by using the event selected/stored by main.py in session memory.
         session_context.get("selected_event_id"),
         session_context.get("event_id"),
     ]
