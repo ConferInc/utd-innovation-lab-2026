@@ -19,10 +19,44 @@ from api_client import (
     EventAPIClient,
 )
 
+# Week 12 fix (Bug 1): Wire the canonical recurring_handler module.
+# Previous code did `from schedule import get_current_schedule` which resolved
+# to nothing (no `schedule.py` exists; `schedule-2.py` cannot be imported as
+# `schedule` because of the hyphen, and itself imports a non-existent
+# `schedule_data` module). The silent ImportError left `get_current_schedule`
+# as None, so every `recurring_schedule` intent fell through to the empty
+# Team 4B `/recurring` endpoint.
 try:
-    from schedule import get_current_schedule
-except Exception:
+    from recurring_handler import (
+        get_current_schedule,
+        get_next_occurrence,
+        get_full_day_schedule,
+        TIMEZONE as _SCHEDULE_TZ,
+    )
+except Exception:  # pragma: no cover — safety net only
     get_current_schedule = None
+    get_next_occurrence = None
+    get_full_day_schedule = None
+    _SCHEDULE_TZ = None
+
+
+# Canonical program names (lowercase) recognised by the local recurring handler.
+RECURRING_PROGRAM_ALIASES: Dict[str, str] = {
+    "darshan": "darshan",
+    "darshana": "darshan",
+    "aarti": "aarti",
+    "arati": "aarti",
+    "bhog": "bhog",
+    "satsang": "satsang",
+    "sunday satsang": "satsang",
+    "kirtan": "bhajans",
+    "kirtans": "bhajans",
+    "bhajan": "bhajans",
+    "bhajans": "bhajans",
+    "daily bhajans": "bhajans",
+    "mahaprasad": "mahaprasad",
+    "prasad": "mahaprasad",
+}
 
 
 WHATSAPP_CHAR_LIMIT = 4096
@@ -59,31 +93,48 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
 
     try:
         if intent == "recurring_schedule":
+            # Week 12 fix (Bug 1): Use the local recurring handler. The Team 4B
+            # `/recurring` endpoint returns an empty list for these temple
+            # programs because they are not scraped — they are static data
+            # owned by the bot.
             if get_current_schedule is not None:
-                active_programs = get_current_schedule()
-                return _truncate_whatsapp(_format_active_recurring_schedule(active_programs))
-
+                program_hint = _resolve_recurring_program(classified_intent, query)
+                return _truncate_whatsapp(
+                    _format_recurring_response(program_hint=program_hint)
+                )
+            # Fallback only if the local module failed to import.
             return _build_event_list_response(client, intent="recurring_events", query=query)
 
         if intent in {"event_list", "event_search", "today_events", "recurring_events"}:
             return _build_event_list_response(client, intent=intent, query=query)
 
         if intent in {"single_event_detail", "event_detail"}:
-            event = _resolve_single_event(client, event_id=event_id, query=query)
+            # Week 12 fix (Bug 2): use raw-message fallback so "Tell me about
+            # the Bhakti Kirtan Retreat" reaches /search even when the entity
+            # extractor's hardcoded EVENT_NAMES list misses it.
+            search_term = _search_term_with_message_fallback(query, classified_intent, session_context)
+            event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
-                return _format_no_results(query or "your request")
+                return _format_no_results(search_term or "your request")
             return _truncate_whatsapp(_format_single_event(event))
 
         if intent in {"sponsorship", "sponsorship_tiers"}:
-            event = _resolve_single_event(client, event_id=event_id, query=query)
+            # Week 12 fix (Bug 3): if no event target was extracted, return a
+            # generic donation / seva message instead of "no matching events".
+            search_term = _search_term_with_message_fallback(query, classified_intent, session_context)
+            if not search_term and event_id is None:
+                return _truncate_whatsapp(_format_generic_sponsorship())
+            event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
-                return _format_no_results(query or "your request")
+                return _truncate_whatsapp(_format_generic_sponsorship())
             return _truncate_whatsapp(_format_sponsorship(event))
 
         if intent in {"logistics", "parking", "logistics_parking"}:
-            event = _resolve_single_event(client, event_id=event_id, query=query)
+            # Week 12 fix (Bug 2): same raw-message fallback as event_specific.
+            search_term = _search_term_with_message_fallback(query, classified_intent, session_context)
+            event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
-                return _format_no_results(query or "your request")
+                return _format_no_results(search_term or "your request")
             return _truncate_whatsapp(_format_logistics(event))
 
         # Fallback:
@@ -157,11 +208,40 @@ def _resolve_intent(classified_intent: Mapping[str, Any]) -> str:
 
 
 def _resolve_query(classified_intent: Mapping[str, Any], session_context: Mapping[str, Any]) -> Optional[str]:
+    """Pull the best search query string out of the classifier output and session.
+
+    Week 12 fix (Bug 2): Previous version only looked at top-level keys on
+    `classified_intent`. The intent classifier puts entity-extractor output
+    under `classified_intent["entities"]`, so when the entity extractor put
+    "Kirtan" into `entities.program_name` (because PROGRAM_NAMES matched it),
+    the response builder saw nothing and routed to "no results". This patch
+    walks both the top-level keys *and* the nested entities, so program/event
+    name extraction in either slot reaches the search endpoint.
+
+    Search priority:
+      1. explicit query / event_name / entity / keyword on the classification
+      2. nested entities.event_name (most specific)
+      3. nested entities.program_name (e.g. recurring program user mentioned
+         in a non-recurring context like logistics)
+      4. session_context.last_query (carry-over)
+
+    NOTE: This deliberately does NOT fall through to the raw user message,
+    because intents like discovery / time_based should never treat the whole
+    user sentence as a search term. The raw message is consulted only by
+    intents that genuinely need a target (event_specific / logistics /
+    sponsorship), via `_search_term_with_message_fallback`.
+    """
+    entities = classified_intent.get("entities") or {}
+    nested_event_name = entities.get("event_name") if isinstance(entities, Mapping) else None
+    nested_program_name = entities.get("program_name") if isinstance(entities, Mapping) else None
+
     candidates: Iterable[Any] = (
         classified_intent.get("query"),
         classified_intent.get("event_name"),
         classified_intent.get("entity"),
         classified_intent.get("keyword"),
+        nested_event_name,
+        nested_program_name,
         session_context.get("last_query"),
     )
     for value in candidates:
@@ -171,6 +251,52 @@ def _resolve_query(classified_intent: Mapping[str, Any], session_context: Mappin
         if text:
             return text
     return None
+
+
+def _search_term_with_message_fallback(
+    query: Optional[str],
+    classified_intent: Mapping[str, Any],
+    session_context: Mapping[str, Any],
+) -> Optional[str]:
+    """Return a search term, falling back to noun-phrase extraction from the
+    raw user message when the structured query is empty.
+
+    This is for intents that *require* a target (event_specific, logistics,
+    sponsorship of a specific event). It strips common question / filler
+    words so that "Where is the Bhakti Kirtan Retreat?" becomes
+    "Bhakti Kirtan Retreat" and reaches the search endpoint.
+    """
+    if query:
+        return query
+    raw = session_context.get("user_message")
+    if not raw:
+        return None
+    cleaned = _strip_question_words(str(raw))
+    return cleaned or None
+
+
+_QUESTION_WORDS = {
+    # Interrogatives + auxiliaries
+    "what", "whats", "when", "where", "who", "why", "how", "which",
+    "is", "are", "was", "were", "do", "does", "did", "can", "could",
+    "should", "would", "will", "the", "a", "an", "to", "for", "of",
+    "about", "tell", "me", "more", "info", "details", "please",
+    # Common starters / fillers
+    "hi", "hello", "hey", "i", "id", "i'd", "want", "need", "looking", "find",
+}
+
+
+def _strip_question_words(text: str) -> str:
+    tokens = [t for t in text.lower().replace("?", " ").replace(",", " ").split() if t]
+    kept = [t for t in tokens if t not in _QUESTION_WORDS]
+    # Recover original casing where possible
+    if not kept:
+        return ""
+    cleaned = " ".join(kept)
+    # If everything got stripped (e.g. the message was "info"), bail out
+    if len(cleaned) < 2:
+        return ""
+    return cleaned
 
 
 def _resolve_event_id(classified_intent: Mapping[str, Any], session_context: Mapping[str, Any]) -> Optional[int]:
@@ -278,20 +404,133 @@ def _find_exact_name_match(events: Sequence[Mapping[str, Any]], query: str) -> O
     return None
 
 
-def _format_active_recurring_schedule(active_programs: Any) -> str:
-    if not isinstance(active_programs, Sequence) or isinstance(active_programs, (str, bytes)):
-        active_programs = []
+def _resolve_recurring_program(
+    classified_intent: Mapping[str, Any], query: Optional[str],
+) -> Optional[str]:
+    """Best-effort match of the user's recurring-program request to a canonical key.
 
-    programs = [str(program).strip() for program in active_programs if str(program).strip()]
-    if not programs:
-        return "There are no recurring temple programs currently active right now."
+    Looks at:
+    1. classified_intent.entities.program_name (entity extractor's output)
+    2. classified_intent.entities.event_name (in case it landed there instead)
+    3. The query string / user message text
 
-    lines = [
-        "*Currently active temple programs:*",
-        "",
-    ]
-    lines.extend(f"- {program}" for program in programs)
+    Returns one of the canonical lowercase program keys understood by
+    recurring_handler.SCHEDULE (darshan, aarti, bhog, satsang, bhajans,
+    mahaprasad), or None if nothing matched.
+    """
+    candidates: List[str] = []
+
+    entities = classified_intent.get("entities") or {}
+    if isinstance(entities, Mapping):
+        for key in ("program_name", "event_name"):
+            value = entities.get(key)
+            if value:
+                candidates.append(str(value).strip().lower())
+
+    if query:
+        candidates.append(str(query).strip().lower())
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        # Exact alias hit
+        if candidate in RECURRING_PROGRAM_ALIASES:
+            return RECURRING_PROGRAM_ALIASES[candidate]
+        # Substring match — handles "Bhakti Kirtans & Satsang" → satsang
+        for alias, canonical in RECURRING_PROGRAM_ALIASES.items():
+            if alias in candidate:
+                return canonical
+    return None
+
+
+def _format_recurring_response(*, program_hint: Optional[str] = None) -> str:
+    """Build the WhatsApp text for a recurring_schedule intent.
+
+    If `program_hint` is set (canonical key like "satsang"), focus the response
+    on the next occurrence of that program. Otherwise show the live + upcoming
+    snapshot for the whole temple.
+    """
+    if get_current_schedule is None:  # safety net
+        return "Recurring schedule data is unavailable right now."
+
+    now = datetime.now(_SCHEDULE_TZ) if _SCHEDULE_TZ else datetime.now()
+
+    # Specific program path
+    if program_hint and get_next_occurrence is not None:
+        try:
+            next_occ = get_next_occurrence(program_hint, now)
+        except Exception:
+            next_occ = None
+        snapshot = get_current_schedule(now)
+        live_now = [p for p in snapshot.get("live", []) if p.lower() == program_hint]
+
+        lines = [f"*{program_hint.capitalize()} schedule:*", ""]
+        if live_now:
+            lines.append(f"🔴 Happening right now ({_format_short_clock(now)}).")
+            lines.append("")
+        if next_occ:
+            start = next_occ.get("start")
+            end = next_occ.get("end")
+            day = next_occ.get("day")
+            when = _format_program_window(start, end, day)
+            lines.append(f"Next: {when}")
+        else:
+            lines.append("No upcoming occurrences in the next 7 days.")
+
+        exc = snapshot.get("exception")
+        if exc:
+            lines.extend(["", f"⚠ {exc}"])
+        return "\n".join(lines).strip()
+
+    # General schedule snapshot
+    snapshot = get_current_schedule(now)
+    live = snapshot.get("live") or []
+    upcoming = snapshot.get("upcoming") or []
+    exception = snapshot.get("exception")
+
+    lines: List[str] = ["*Temple recurring schedule*", ""]
+
+    if live:
+        lines.append("🔴 *Happening now:*")
+        for program in live:
+            lines.append(f"- {program}")
+        lines.append("")
+
+    if upcoming:
+        lines.append("🕒 *Starting within the next 2 hours:*")
+        for program, when in upcoming:
+            lines.append(f"- {program} at {_format_short_clock(when)}")
+        lines.append("")
+
+    if not live and not upcoming:
+        lines.append("No temple programs are running right now.")
+        lines.append("")
+        lines.append("Daily programs include Darshan, Aarti, Bhog and Bhajans.")
+        lines.append("Sunday Satsang runs 10:30 AM – 12:30 PM CT.")
+        lines.append("")
+
+    if exception:
+        lines.append(f"⚠ {exception}")
+
+    lines.append("Reply with a program name (Satsang, Aarti, Darshan, Bhog, Bhajans) for the next occurrence.")
     return "\n".join(lines).strip()
+
+
+def _format_program_window(start: Any, end: Any, day: Any) -> str:
+    if not isinstance(start, datetime):
+        return MISSING_FIELD_TEXT
+    day_text = str(day) if day else start.strftime("%A")
+    start_clock = _format_short_clock(start)
+    if isinstance(end, datetime):
+        end_clock = _format_short_clock(end)
+        return f"{day_text}, {start_clock} – {end_clock} CT"
+    return f"{day_text}, {start_clock} CT"
+
+
+def _format_short_clock(value: Any) -> str:
+    if not isinstance(value, datetime):
+        return MISSING_FIELD_TEXT
+    return value.strftime("%I:%M %p").lstrip("0")
 
 
 def _format_single_event(event: Mapping[str, Any]) -> str:
@@ -358,6 +597,31 @@ def _format_no_results(query: str) -> str:
         "- a category like *festival*, *weekly satsang*, or *youth*\n\n"
         "If you want, I can also show the latest upcoming events."
     )
+
+
+def _format_generic_sponsorship() -> str:
+    """Generic sponsorship / donation response when no specific event target.
+
+    Week 12 fix (Bug 3): Previously, "How can I donate?" classified as
+    sponsorship → response builder tried to resolve a single event → returned
+    "I could not find any matching events". Now we return real, non-fabricated
+    seva / donation guidance with the temple's public links.
+    """
+    lines = [
+        "*Donations & Seva at JKYog Radha Krishna Temple* 🙏",
+        "",
+        "Your support keeps daily worship, prasad and community programs running.",
+        "",
+        "Ways to contribute:",
+        "- *General donation*: jkyog.org/donate",
+        "- *Annadaan (food sponsorship)* — sponsor prasad for a day or week",
+        "- *Sponsor a deity bhog or aarti* — single-day, weekly, or monthly",
+        "- *Festival sponsorship* — Janmashtami, Holi, Diwali, etc.",
+        "- *Life Transformation Program (LTP) sponsor* — covers a participant's stay",
+        "",
+        "If you are looking for sponsorship tiers for a *specific event*, reply with the event name (example: \"sponsorship for Holi\" or \"sponsor LTP\") and I will pull the tiers from the event page.",
+    ]
+    return "\n".join(lines).strip()
 
 
 def _format_sponsorship(event: Mapping[str, Any]) -> str:

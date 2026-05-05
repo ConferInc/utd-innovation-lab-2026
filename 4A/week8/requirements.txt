@@ -6,3 +6,8 @@ python-dotenv==1.0.1
 python-multipart==0.0.9
 google-genai==0.3.0
 python-dateutil==2.9.0
+# Week 12 fix: tzdata is required on Windows so that zoneinfo.ZoneInfo("America/Chicago")
+# resolves. On Linux/Mac it reads the system tz database; on Windows there is none.
+# Without this, recurring_handler.py raises ZoneInfoNotFoundError at import time, which
+# silently disables the entire recurring_schedule intent path.
+tzdata>=2024.1

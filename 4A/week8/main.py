@@ -2,13 +2,14 @@ import os
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 from dotenv import load_dotenv
 
-from intent_classifier import classify
+from intent_classifier import classify, warm_up as _warm_up_gemini
 from response_builder import build_response
 
 logging.basicConfig(
@@ -19,7 +20,22 @@ logger = logging.getLogger("main")
 
 load_dotenv()
 
-app = FastAPI(title="JKYog WhatsApp Bot")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Week 12 fix (Bug 5): Warm Gemini on startup so the first real WhatsApp
+    # message does not pay the 25–30s TLS / model-cold-start cost. Twilio's
+    # webhook timeout is 15s; without warm-up, students see "no response".
+    if os.getenv("GEMINI_WARMUP", "1") == "1":
+        try:
+            ok = _warm_up_gemini()
+            logger.info("Gemini warm-up: %s", "ok" if ok else "skipped/failed")
+        except Exception as exc:  # pragma: no cover — safety net
+            logger.warning("Gemini warm-up raised: %s", exc)
+    yield
+
+
+app = FastAPI(title="JKYog WhatsApp Bot", lifespan=lifespan)
 
 ACTIVE_SESSIONS = {}
 
@@ -77,19 +93,40 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         "user_id": session_data["user_id"],
         "conversation_id": session_data["conversation_id"],
         "last_intent": session_data["last_intent"],
-        "selected_event_id": session_data["selected_event_id"]
+        "selected_event_id": session_data["selected_event_id"],
+        # Week 12 fix (Bug 2): Pass raw user message so the response builder
+        # can use it as a fallback search query when neither the LLM nor the
+        # entity extractor produced an event_name / query string.
+        "user_message": body_text,
     }
 
     # 3. Build Response
-    try:
-        reply_text = build_response(raw_classification, context)
-    except Exception as e:
-        logger.error(f"Response Builder Failed: {e}", exc_info=True)
-        reply_text = ""
+    intent_str = raw_classification.get("intent")
 
-    # 4. Graceful Fallback
-    if not reply_text or len(reply_text.strip()) == 0 or raw_classification.get("intent") in ["clarification_needed", "ambiguous", "unknown"]:
-        reply_text = "I'm having trouble understanding that right now. Try: 'What events are happening this weekend?'"
+    # Week 12 fix (Bug 4): For clarification / ambiguous / unknown we never
+    # call build_response — go straight to the clarification prompt.
+    if intent_str in ("clarification_needed", "ambiguous", "unknown"):
+        reply_text = (
+            "I'm not sure I caught that. You can ask me about:\n"
+            "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
+            "- a *specific event* (e.g. \"tell me about Holi\")\n"
+            "- *recurring temple schedule* (e.g. \"when is Sunday Satsang?\")\n"
+            "- *parking / logistics* for an event\n"
+            "- *donations / seva*"
+        )
+    else:
+        try:
+            reply_text = build_response(raw_classification, context)
+        except Exception as e:
+            logger.error(f"Response Builder Failed: {e}", exc_info=True)
+            reply_text = ""
+
+        # 4. Graceful Fallback for empty replies only.
+        if not reply_text or len(reply_text.strip()) == 0:
+            reply_text = (
+                "I'm having trouble understanding that right now. "
+                "Try: 'What events are happening this weekend?'"
+            )
 
     # 5. Send Message
     try:
