@@ -20,9 +20,11 @@ from api_client import (
 )
 
 try:
-    from schedule import get_current_schedule
+    from recurring_handler import get_current_schedule, get_next_occurrence, TIMEZONE
 except Exception:
     get_current_schedule = None
+    get_next_occurrence = None
+    TIMEZONE = None
 
 
 WHATSAPP_CHAR_LIMIT = 4096
@@ -61,7 +63,7 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
         if intent == "recurring_schedule":
             if get_current_schedule is not None:
                 active_programs = get_current_schedule()
-                return _truncate_whatsapp(_format_active_recurring_schedule(active_programs))
+                return _truncate_whatsapp(_format_active_recurring_schedule(active_programs, program_hint=query))
 
             return _build_event_list_response(client, intent="recurring_events", query=query)
 
@@ -75,15 +77,20 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             return _truncate_whatsapp(_format_single_event(event))
 
         if intent in {"sponsorship", "sponsorship_tiers"}:
-            event = _resolve_single_event(client, event_id=event_id, query=query)
+            target_query = _search_term_with_message_fallback(query, session_context)
+            if event_id is None and not target_query:
+                return _truncate_whatsapp(_format_generic_sponsorship())
+
+            event = _resolve_single_event(client, event_id=event_id, query=target_query)
             if event is None:
-                return _format_no_results(query or "your request")
+                return _format_no_results(target_query or "your request")
             return _truncate_whatsapp(_format_sponsorship(event))
 
         if intent in {"logistics", "parking", "logistics_parking"}:
-            event = _resolve_single_event(client, event_id=event_id, query=query)
+            target_query = _search_term_with_message_fallback(query, session_context)
+            event = _resolve_single_event(client, event_id=event_id, query=target_query)
             if event is None:
-                return _format_no_results(query or "your request")
+                return _format_no_results(target_query or "your request")
             return _truncate_whatsapp(_format_logistics(event))
 
         # Fallback:
@@ -151,6 +158,9 @@ def _resolve_intent(
         "details": "single_event_detail",
         "event_search": "event_search",
         "search": "event_search",
+        "event_specific": "single_event_detail",
+        "specific_event": "single_event_detail",
+        "event_info": "single_event_detail",
         "sponsorship": "sponsorship",
         "sponsorship_tiers": "sponsorship",
         "logistics": "logistics",
@@ -184,11 +194,21 @@ def _resolve_intent(
 
 
 def _resolve_query(classified_intent: Mapping[str, Any], session_context: Mapping[str, Any]) -> Optional[str]:
+    entities = classified_intent.get("entities")
+    entity_event_name = None
+    entity_program_name = None
+
+    if isinstance(entities, Mapping):
+        entity_event_name = entities.get("event_name")
+        entity_program_name = entities.get("program_name")
+
     candidates: Iterable[Any] = (
         classified_intent.get("query"),
         classified_intent.get("event_name"),
         classified_intent.get("entity"),
         classified_intent.get("keyword"),
+        entity_event_name,
+        entity_program_name,
         session_context.get("last_query"),
     )
     for value in candidates:
@@ -198,6 +218,34 @@ def _resolve_query(classified_intent: Mapping[str, Any], session_context: Mappin
         if text:
             return text
     return None
+
+
+def _search_term_with_message_fallback(
+    query: Optional[str],
+    session_context: Mapping[str, Any],
+) -> Optional[str]:
+    if query:
+        return query
+
+    raw_message = session_context.get("user_message") or session_context.get("latest_user_message")
+    if not raw_message:
+        return None
+
+    text = str(raw_message).lower()
+    for char in "?!.:,;()[]{}\"'":
+        text = text.replace(char, " ")
+
+    filler_words = {
+        "a", "an", "and", "are", "about", "can", "could", "do", "does", "for",
+        "give", "help", "how", "i", "is", "it", "its", "me", "more", "of",
+        "on", "please", "show", "tell", "the", "there", "to", "what", "when",
+        "where", "with", "you", "your", "info", "information", "details",
+        "parking", "food", "venue", "location", "logistics", "sponsor",
+        "sponsorship", "donate", "donation", "seva",
+    }
+    tokens = [token for token in text.split() if token and token not in filler_words]
+    cleaned = " ".join(tokens).strip()
+    return cleaned or None
 
 
 def _resolve_event_id(classified_intent: Mapping[str, Any], session_context: Mapping[str, Any]) -> Optional[int]:
@@ -307,13 +355,25 @@ def _find_exact_name_match(events: Sequence[Mapping[str, Any]], query: str) -> O
     return None
 
 
-def _format_active_recurring_schedule(active_programs: Any) -> str:
+def _format_active_recurring_schedule(active_programs: Any, program_hint: Optional[str] = None) -> str:
     if not isinstance(active_programs, Sequence) or isinstance(active_programs, (str, bytes)):
         active_programs = []
 
     programs = [str(program).strip() for program in active_programs if str(program).strip()]
+    program_hint_text = str(program_hint or "").strip()
+
+    if program_hint_text and get_next_occurrence is not None:
+        next_text = _format_next_recurring_occurrence(program_hint_text)
+        if next_text:
+            return next_text
+
     if not programs:
-        return "There are no recurring temple programs currently active right now."
+        return (
+            "*Temple recurring schedule*\n\n"
+            "There are no recurring temple programs currently active right now. "
+            "You can ask about a specific program such as Aarti, Darshan, Bhajans, "
+            "Sunday Satsang, or Mahaprasad."
+        )
 
     lines = [
         "*Currently active temple programs:*",
@@ -321,6 +381,63 @@ def _format_active_recurring_schedule(active_programs: Any) -> str:
     ]
     lines.extend(f"- {program}" for program in programs)
     return "\n".join(lines).strip()
+
+
+def _format_next_recurring_occurrence(program_hint: str) -> Optional[str]:
+    canonical_program = _resolve_recurring_program_name(program_hint)
+    if not canonical_program:
+        return None
+
+    try:
+        next_occurrence = get_next_occurrence(canonical_program)
+    except Exception:
+        return None
+
+    if not next_occurrence:
+        return None
+
+    if isinstance(next_occurrence, tuple):
+        start = next_occurrence[0] if len(next_occurrence) > 0 else None
+        end = next_occurrence[1] if len(next_occurrence) > 1 else None
+    else:
+        start = next_occurrence
+        end = None
+
+    if hasattr(start, "strftime"):
+        start_text = start.strftime("%A, %I:%M %p").replace(" 0", " ")
+    else:
+        start_text = str(start)
+
+    if hasattr(end, "strftime"):
+        end_text = end.strftime("%I:%M %p").replace(" 0", " ")
+        time_text = f"{start_text} to {end_text} CT"
+    else:
+        time_text = f"{start_text} CT"
+
+    display_name = canonical_program.replace("_", " ").title()
+    return f"*{display_name} schedule:*\nNext: {time_text}"
+
+
+def _resolve_recurring_program_name(program_hint: str) -> Optional[str]:
+    normalized = " ".join(program_hint.lower().replace("-", " ").split())
+    aliases = {
+        "aarti": "aarti",
+        "arti": "aarti",
+        "darshan": "darshan",
+        "bhajan": "bhajans",
+        "bhajans": "bhajans",
+        "daily bhajans": "bhajans",
+        "kirtan": "bhajans",
+        "satsang": "satsang",
+        "sunday satsang": "satsang",
+        "mahaprasad": "mahaprasad",
+        "maha prasad": "mahaprasad",
+        "prasad": "mahaprasad",
+    }
+    for phrase, canonical in aliases.items():
+        if phrase in normalized:
+            return canonical
+    return None
 
 
 def _format_single_event(event: Mapping[str, Any]) -> str:
@@ -387,6 +504,23 @@ def _format_no_results(query: str) -> str:
         "- a category like *festival*, *weekly satsang*, or *youth*\n\n"
         "If you want, I can also show the latest upcoming events."
     )
+
+
+def _format_generic_sponsorship() -> str:
+    lines = [
+        "*Donations & Seva at JKYog Radha Krishna Temple*",
+        "",
+        "You can support the temple through seva and donation opportunities such as:",
+        "- Annadaan / food seva",
+        "- Deity bhog seva",
+        "- Festival sponsorship",
+        "- Program or event sponsorship",
+        "",
+        "Donation information: https://www.jkyog.org/donate",
+        "",
+        "For a specific event, please mention the event name and I can check whether sponsorship tiers are listed.",
+    ]
+    return "\n".join(lines).strip()
 
 
 def _format_sponsorship(event: Mapping[str, Any]) -> str:
