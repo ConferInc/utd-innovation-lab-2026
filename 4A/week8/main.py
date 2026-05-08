@@ -80,12 +80,38 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
             "user_id": str(uuid.uuid4()),
             "conversation_id": str(uuid.uuid4()),
             "last_intent": None,
-            "selected_event_id": None
+            "selected_event_id": None,
+            "last_shown_event_ids": [],
         }
 
     session_data = ACTIVE_SESSIONS[sender_phone]
+    session_data.setdefault("last_shown_event_ids", [])
     session_data["last_intent"] = raw_classification.get("intent")
-    
+
+    # Bugfix (post-Week-12 audit): support bare numeric replies like "2" as a
+    # follow-up to a previously shown event list. The list response says
+    # "Reply with: 1, 2, or 3 for full details" — if the previous turn pushed
+    # 5 events into session.last_shown_event_ids, "2" should resolve to the
+    # second of those event IDs and re-enter build_response with intent
+    # event_detail. Done here in main.py so the classifier doesn't have to
+    # learn list-position grammar.
+    selected_id_override = None
+    stripped = body_text.strip()
+    if stripped.isdigit():
+        idx = int(stripped) - 1
+        prev_ids = session_data.get("last_shown_event_ids") or []
+        if 0 <= idx < len(prev_ids):
+            selected_id_override = prev_ids[idx]
+            logger.info(f"NUMBERED FOLLOW-UP: '{stripped}' -> event_id={selected_id_override}")
+            raw_classification = {
+                "intent": "single_event_detail",
+                "confidence": 1.0,
+                "entities": {},
+                "event_id": selected_id_override,
+            }
+            session_data["last_intent"] = "single_event_detail"
+            session_data["selected_event_id"] = selected_id_override
+
     context = {
         "phone_number": sender_phone,
         "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
@@ -94,6 +120,7 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         "conversation_id": session_data["conversation_id"],
         "last_intent": session_data["last_intent"],
         "selected_event_id": session_data["selected_event_id"],
+        "last_shown_event_ids": list(session_data.get("last_shown_event_ids") or []),
         # Week 12 fix (Bug 2): Pass raw user message so the response builder
         # can use it as a fallback search query when neither the LLM nor the
         # entity extractor produced an event_name / query string.
@@ -127,6 +154,11 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
                 "I'm having trouble understanding that right now. "
                 "Try: 'What events are happening this weekend?'"
             )
+
+        # Persist any list-of-event-IDs the response builder showed so the
+        # next bare-digit reply ("2") can resolve to one of them.
+        if "last_shown_event_ids" in context:
+            session_data["last_shown_event_ids"] = list(context.get("last_shown_event_ids") or [])
 
     # 5. Send Message
     try:

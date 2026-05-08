@@ -103,10 +103,10 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
                     _format_recurring_response(program_hint=program_hint)
                 )
             # Fallback only if the local module failed to import.
-            return _build_event_list_response(client, intent="recurring_events", query=query)
+            return _build_event_list_response(client, intent="recurring_events", query=query, session_context=session_context)
 
         if intent in {"event_list", "event_search", "today_events", "recurring_events"}:
-            return _build_event_list_response(client, intent=intent, query=query)
+            return _build_event_list_response(client, intent=intent, query=query, session_context=session_context)
 
         if intent == "time_based":
             # Bugfix (post-Week-12 audit, B1+B6): the previous code dropped
@@ -119,7 +119,7 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             # this is where filtering actually happens.
             timeframe = _resolve_timeframe(classified_intent)
             if timeframe == "today" or timeframe == "tonight":
-                return _build_event_list_response(client, intent="today_events", query=query)
+                return _build_event_list_response(client, intent="today_events", query=query, session_context=session_context)
             date_range = _date_range_for_timeframe(timeframe)
             return _build_event_list_response(
                 client,
@@ -127,12 +127,13 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
                 query=query,
                 date_filter=date_range,
                 heading_override=_format_timeframe_heading(timeframe),
+                session_context=session_context,
             )
 
         if intent == "discovery":
             # Bugfix (post-Week-12 audit, B12): give discovery an explicit
             # branch so it picks up the same past-event filter as the rest.
-            return _build_event_list_response(client, intent="event_list", query=query)
+            return _build_event_list_response(client, intent="event_list", query=query, session_context=session_context)
 
         if intent in {"single_event_detail", "event_detail"}:
             # Week 12 fix (Bug 2): use raw-message fallback so "Tell me about
@@ -168,7 +169,7 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
         if event is not None:
             return _truncate_whatsapp(_format_single_event(event))
 
-        return _truncate_whatsapp(_build_event_list_response(client, intent="event_list", query=query))
+        return _truncate_whatsapp(_build_event_list_response(client, intent="event_list", query=query, session_context=session_context))
 
     except APIClientError:
         return (
@@ -365,6 +366,7 @@ def _build_event_list_response(
     query: Optional[str],
     date_filter: Optional[Tuple[Any, Any]] = None,
     heading_override: Optional[str] = None,
+    session_context: Optional[Mapping[str, Any]] = None,
 ) -> str:
     """Build a list response. Pulls a candidate set from the API based on
     `intent` (and `query` for search), then filters out events whose end
@@ -407,14 +409,29 @@ def _build_event_list_response(
         heading_query = heading_override
 
     if not events:
+        if isinstance(session_context, dict):
+            session_context["last_shown_event_ids"] = []
         return _format_no_results(heading_query)
 
     # Cap to 5 and trim to stay under WhatsApp size.
     for count in range(min(5, len(events)), 0, -1):
-        candidate = _format_event_list(events[:count], heading_query)
+        chosen = events[:count]
+        candidate = _format_event_list(chosen, heading_query)
         if len(candidate) <= WHATSAPP_CHAR_LIMIT:
+            # Bugfix (post-Week-12 audit): record the event IDs we just
+            # showed in session memory, so a follow-up bare digit ("2") can
+            # be resolved to an event ID by main.py before re-classifying.
+            if isinstance(session_context, dict):
+                session_context["last_shown_event_ids"] = [
+                    int(e["id"]) for e in chosen if isinstance(e.get("id"), (int, str)) and str(e.get("id")).strip().isdigit()
+                ]
             return candidate
 
+    if isinstance(session_context, dict):
+        first = events[:1]
+        session_context["last_shown_event_ids"] = [
+            int(e["id"]) for e in first if isinstance(e.get("id"), (int, str)) and str(e.get("id")).strip().isdigit()
+        ]
     return _truncate_whatsapp(_format_event_list(events[:1], heading_query))
 
 
@@ -934,8 +951,21 @@ def _format_date_time(event: Mapping[str, Any]) -> str:
         return f"When: {MISSING_FIELD_TEXT}"
 
     if start is not None and end is not None:
+        # Bugfix (post-Week-12 audit, B18 cont'd): for multi-day events the
+        # full "Apr 7, 2026 12:00 AM to Apr 12, 2026 1:30 AM CT" was technically
+        # correct but visually confusing — the bogus 12:00 AM/1:30 AM times
+        # come from scraper artefacts, not the actual schedule. Show the
+        # date range cleanly in that case.
+        if start.date() != end.date():
+            start_text = start.strftime("%b %d, %Y").replace(" 0", " ")
+            end_text = end.strftime("%b %d, %Y").replace(" 0", " ")
+            # Compact form when same year
+            if start.year == end.year:
+                end_text = end.strftime("%b %d").replace(" 0", " ")
+            return f"When: {start_text} – {end_text} {tz_label}"
+        # Single-day with start+end times
         start_text = start.strftime("%b %d, %Y %I:%M %p").replace(" 0", " ")
-        end_text = end.strftime("%b %d, %Y %I:%M %p").replace(" 0", " ")
+        end_text = end.strftime("%I:%M %p").replace(" 0", " ")
         return f"When: {start_text} to {end_text} {tz_label}"
 
     dt = start or end
@@ -946,15 +976,37 @@ def _format_date_time(event: Mapping[str, Any]) -> str:
 def _format_short_date_time(event: Mapping[str, Any]) -> str:
     """Render the When line in event-list rows (compact form).
 
-    Bugfix mirror of `_format_date_time`: same naive-datetime / null-TZ
-    behaviour, same " CT" default suffix.
+    Bugfix (post-Week-12 audit, B18): multi-day events used to show only
+    the start datetime — e.g. the Seattle LTP (May 4 → May 9) rendered as
+    "May 4, 1:30 AM CT" in a list called "tomorrow", which made it look
+    like a one-shot in the past. We now detect multi-day events (start
+    and end on different calendar dates) and render the date range
+    instead. The bogus 1:30 AM time is dropped in that case so users
+    aren't misled by what is upstream-bad scraper data.
+
+    Single-day events keep the original "May 23, 4:00 PM CT" form.
     """
     start = _parse_iso_datetime(event.get("start_datetime"))
+    end = _parse_iso_datetime(event.get("end_datetime"))
     api_tz = _value_or_blank(event.get("timezone"))
     tz_label = api_tz or "CT"
-    if start is None:
+
+    if start is None and end is None:
         return f"When: {MISSING_FIELD_TEXT}"
-    return f"When: {start.strftime('%b %d, %I:%M %p').replace(' 0', ' ')} {tz_label}"
+
+    # Multi-day event: show date range, omit the suspect/inconsistent time.
+    if start is not None and end is not None and start.date() != end.date():
+        start_text = start.strftime("%b %d").replace(" 0", " ")
+        end_text = end.strftime("%b %d").replace(" 0", " ")
+        # If end is the very early morning of the next day after start,
+        # treat it as a same-day late event for label purposes (rare).
+        if end.date() == start.date():
+            return f"When: {start_text} {tz_label}"
+        return f"When: {start_text} – {end_text} {tz_label}"
+
+    dt = start or end
+    assert dt is not None
+    return f"When: {dt.strftime('%b %d, %I:%M %p').replace(' 0', ' ')} {tz_label}"
 
 
 def _format_location(event: Mapping[str, Any]) -> str:
