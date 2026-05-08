@@ -10,7 +10,7 @@ build_response(classified_intent: dict, session_context: dict) -> str
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
 from api_client import (
@@ -107,6 +107,32 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
 
         if intent in {"event_list", "event_search", "today_events", "recurring_events"}:
             return _build_event_list_response(client, intent=intent, query=query)
+
+        if intent == "time_based":
+            # Bugfix (post-Week-12 audit, B1+B6): the previous code dropped
+            # `time_based` into the generic fallback, which calls
+            # `client.get_events()` with no filter and shows the same generic
+            # upcoming list for "tomorrow", "this weekend", "at 3am tonight",
+            # etc. Now we resolve the timeframe entity into a (start, end)
+            # date pair and let `_build_event_list_response` filter the API
+            # response client-side. The API doesn't honour `start_date=…` so
+            # this is where filtering actually happens.
+            timeframe = _resolve_timeframe(classified_intent)
+            if timeframe == "today" or timeframe == "tonight":
+                return _build_event_list_response(client, intent="today_events", query=query)
+            date_range = _date_range_for_timeframe(timeframe)
+            return _build_event_list_response(
+                client,
+                intent="event_list",
+                query=query,
+                date_filter=date_range,
+                heading_override=_format_timeframe_heading(timeframe),
+            )
+
+        if intent == "discovery":
+            # Bugfix (post-Week-12 audit, B12): give discovery an explicit
+            # branch so it picks up the same past-event filter as the rest.
+            return _build_event_list_response(client, intent="event_list", query=query)
 
         if intent in {"single_event_detail", "event_detail"}:
             # Week 12 fix (Bug 2): use raw-message fallback so "Tell me about
@@ -283,6 +309,12 @@ _QUESTION_WORDS = {
     "about", "tell", "me", "more", "info", "details", "please",
     # Common starters / fillers
     "hi", "hello", "hey", "i", "id", "i'd", "want", "need", "looking", "find",
+    # Bugfix (post-Week-12 audit, B19 case): "Where is the temple?" used to
+    # leak through with a residual "temple" search term and returned the
+    # first event in the API. The temple itself is a venue, not an event —
+    # strip these venue-only words so that bare venue questions fall to the
+    # logistics no-target branch instead of returning a random event.
+    "temple", "jkyog", "venue", "place", "located", "directions",
 }
 
 
@@ -326,7 +358,27 @@ def _coerce_int(value: Any) -> Optional[int]:
         return None
 
 
-def _build_event_list_response(client: EventAPIClient, *, intent: str, query: Optional[str]) -> str:
+def _build_event_list_response(
+    client: EventAPIClient,
+    *,
+    intent: str,
+    query: Optional[str],
+    date_filter: Optional[Tuple[Any, Any]] = None,
+    heading_override: Optional[str] = None,
+) -> str:
+    """Build a list response. Pulls a candidate set from the API based on
+    `intent` (and `query` for search), then filters out events whose end
+    time is already in the past, then optionally restricts to a date range.
+
+    Bugfix (post-Week-12 audit):
+      - B6: the API doesn't honour `?upcoming_only=true`. We pull a wider
+        page (limit=20) and filter client-side so the user never sees the
+        Seattle LTP in the "upcoming" list on a date after it ended.
+      - T5: `date_filter=(start_date, end_date)` lets the time_based handler
+        reuse this function for "tomorrow", "this weekend", "May 23rd",
+        etc. — the API ignores `start_date=…` so all the filtering happens
+        here.
+    """
     if intent == "today_events":
         payload = client.get_today()
         heading_query = "today"
@@ -337,10 +389,23 @@ def _build_event_list_response(client: EventAPIClient, *, intent: str, query: Op
         payload = client.search_events(query, limit=DEFAULT_SEARCH_LIMIT, offset=0)
         heading_query = query
     else:
-        payload = client.get_events(limit=DEFAULT_LIST_LIMIT, offset=0)
+        # Pull a wider window so client-side past-event filtering still
+        # leaves enough rows to display.
+        payload = client.get_events(limit=DEFAULT_LIST_LIMIT * 4, offset=0)
         heading_query = "upcoming events"
 
     events = _extract_events(payload)
+
+    # Filter out events whose end_datetime has already passed.
+    events = _filter_upcoming(events)
+
+    # Optional date-range filter (used by time_based intent).
+    if date_filter is not None:
+        events = _filter_by_date_range(events, *date_filter)
+
+    if heading_override:
+        heading_query = heading_override
+
     if not events:
         return _format_no_results(heading_query)
 
@@ -351,6 +416,177 @@ def _build_event_list_response(client: EventAPIClient, *, intent: str, query: Op
             return candidate
 
     return _truncate_whatsapp(_format_event_list(events[:1], heading_query))
+
+
+def _now_ct() -> datetime:
+    """Return current time in Central Time (the temple's wall-clock zone).
+
+    Used as the "is this event still relevant?" reference point. Falls back
+    to a naive `datetime.now()` if the local timezone module failed to
+    import (defensive — should never trigger in production).
+    """
+    if _SCHEDULE_TZ is not None:
+        return datetime.now(_SCHEDULE_TZ)
+    return datetime.now()
+
+
+def _filter_upcoming(events: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]]:
+    """Drop events whose end_datetime is already in the past.
+
+    Multi-day events are preserved while at least their end date is in the
+    future — e.g. on 2026-05-08 the Seattle LTP (May 4–9) still counts as
+    "upcoming" until end-of-day May 9. Events with no end_datetime fall back
+    to the start_datetime for this comparison.
+    """
+    now = _now_ct()
+    keep: List[Dict[str, Any]] = []
+    for event in events:
+        end = _parse_iso_datetime(event.get("end_datetime")) or _parse_iso_datetime(event.get("start_datetime"))
+        if end is None:
+            # No date info at all — keep it; better to surface than to drop.
+            keep.append(dict(event))
+            continue
+        # Naive datetimes from the API are treated as CT (see B3 bugfix).
+        if end.tzinfo is None and _SCHEDULE_TZ is not None:
+            end = end.replace(tzinfo=_SCHEDULE_TZ)
+        if end >= now:
+            keep.append(dict(event))
+    return keep
+
+
+def _resolve_timeframe(classified_intent: Mapping[str, Any]) -> Optional[str]:
+    """Pull a timeframe label out of the classifier's entities.
+
+    Accepts either a known label (today/tomorrow/this_weekend/this_week) or
+    an ISO date string (the entity extractor's `parsed_date`).
+    """
+    entities = classified_intent.get("entities") or {}
+    if not isinstance(entities, Mapping):
+        return None
+    value = entities.get("timeframe") or entities.get("parsed_date")
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    return text or None
+
+
+def _format_timeframe_heading(timeframe: Optional[str]) -> Optional[str]:
+    """Pretty-print a timeframe label for the event-list heading.
+
+    Returns None to fall back to the default `upcoming events` heading when
+    we can't make a nice phrase.
+    """
+    if not timeframe:
+        return None
+    if timeframe == "today" or timeframe == "tonight":
+        return "today"
+    if timeframe == "tomorrow":
+        return "tomorrow"
+    if timeframe == "this_weekend":
+        return "this weekend"
+    if timeframe == "this_week":
+        return "this week"
+    if timeframe == "next_week":
+        return "next week"
+    # ISO date — render a friendly form (Windows-safe: strftime("%b %d") then
+    # strip any leading zero in the day number)
+    try:
+        d = date.fromisoformat(timeframe)
+        return d.strftime("%b %d").replace(" 0", " ")
+    except (TypeError, ValueError):
+        return None
+
+
+def _date_range_for_timeframe(
+    timeframe: Optional[str],
+) -> Optional[Tuple[Optional[date], Optional[date]]]:
+    """Map a timeframe label or YYYY-MM-DD string to a (start, end) date pair.
+
+    Returns None to mean "no filter" (defensive — caller can still fall
+    through to the unfiltered upcoming list).
+
+    Mapping rules (today is computed in CT):
+      - "today"               → (today, today)              (handled separately by caller via /today endpoint)
+      - "tonight"             → (today, today)
+      - "tomorrow"            → (tomorrow, tomorrow)
+      - "this_weekend"        → (next Saturday, next Sunday) (or today/tomorrow if today is already Sat/Sun)
+      - "this_week"           → (today, end of this week, Sunday)
+      - "next_week"           → (next Monday, next Sunday)
+      - "YYYY-MM-DD"          → (that day, that day)
+      - anything else         → None  (let the caller fall through unfiltered)
+    """
+    if not timeframe:
+        return None
+
+    today = _now_ct().date()
+
+    if timeframe in {"today", "tonight"}:
+        return (today, today)
+    if timeframe == "tomorrow":
+        d = today + timedelta(days=1)
+        return (d, d)
+    if timeframe == "this_weekend":
+        # Saturday=5, Sunday=6
+        wd = today.weekday()
+        if wd >= 5:
+            # Already weekend — show today + Sunday.
+            sat = today if wd == 5 else today - timedelta(days=1)
+            sun = sat + timedelta(days=1)
+            return (today, sun)
+        days_to_sat = 5 - wd
+        sat = today + timedelta(days=days_to_sat)
+        sun = sat + timedelta(days=1)
+        return (sat, sun)
+    if timeframe == "this_week":
+        # Today through end-of-week (Sunday).
+        wd = today.weekday()
+        end = today + timedelta(days=(6 - wd))
+        return (today, end)
+    if timeframe == "next_week":
+        wd = today.weekday()
+        days_to_next_mon = (7 - wd) % 7 or 7
+        mon = today + timedelta(days=days_to_next_mon)
+        sun = mon + timedelta(days=6)
+        return (mon, sun)
+
+    # ISO date string e.g. "2026-05-23"
+    try:
+        parsed = date.fromisoformat(timeframe)
+        return (parsed, parsed)
+    except (TypeError, ValueError):
+        return None
+
+
+def _filter_by_date_range(
+    events: Sequence[Mapping[str, Any]],
+    range_start,
+    range_end,
+) -> List[Dict[str, Any]]:
+    """Keep events whose [start, end] overlaps the [range_start, range_end] window.
+
+    `range_start` and `range_end` are `date` (or naive `datetime`) objects in
+    Central Time. Used for "tomorrow", "this weekend", a specific date,
+    etc. — the API does not honour `start_date=` query params, so this is
+    where the filtering actually happens.
+    """
+    if range_start is None and range_end is None:
+        return [dict(e) for e in events]
+
+    keep: List[Dict[str, Any]] = []
+    for event in events:
+        start_dt = _parse_iso_datetime(event.get("start_datetime"))
+        end_dt = _parse_iso_datetime(event.get("end_datetime")) or start_dt
+        if start_dt is None:
+            continue
+        start_d = start_dt.date()
+        end_d = (end_dt or start_dt).date()
+        # Inclusive overlap test on dates.
+        if range_end is not None and start_d > range_end:
+            continue
+        if range_start is not None and end_d < range_start:
+            continue
+        keep.append(dict(event))
+    return keep
 
 
 def _resolve_single_event(
@@ -674,9 +910,25 @@ def _format_logistics(event: Mapping[str, Any]) -> str:
 
 
 def _format_date_time(event: Mapping[str, Any]) -> str:
+    """Render the When line for a single event detail.
+
+    Bugfix (post-Week-12 audit, B3): the API returns naive datetime strings
+    like `2026-05-04T01:30:00` with `timezone: null`, so the previous code
+    rendered "May 4, 1:30 AM" with an empty TZ suffix. We now treat naive
+    datetimes as Central Time (the temple's wall-clock zone) and always
+    surface " CT" so users have an unambiguous time string. Multi-day
+    events get the more compact "Apr 7, 2026 12:00 AM to Apr 12, 2026 1:30 AM CT".
+
+    If the API ever does return an explicit timezone (e.g. "PST"), we honour
+    it as a display label without re-converting the wall-clock time, since
+    the underlying values are already local to whichever zone the scraper
+    used. This is the least-wrong rendering until the 4B scraper populates
+    `timezone` consistently.
+    """
     start = _parse_iso_datetime(event.get("start_datetime"))
     end = _parse_iso_datetime(event.get("end_datetime"))
-    timezone = _value_or_blank(event.get("timezone"))
+    api_tz = _value_or_blank(event.get("timezone"))
+    tz_label = api_tz or "CT"
 
     if start is None and end is None:
         return f"When: {MISSING_FIELD_TEXT}"
@@ -684,19 +936,25 @@ def _format_date_time(event: Mapping[str, Any]) -> str:
     if start is not None and end is not None:
         start_text = start.strftime("%b %d, %Y %I:%M %p").replace(" 0", " ")
         end_text = end.strftime("%b %d, %Y %I:%M %p").replace(" 0", " ")
-        return f"When: {start_text} to {end_text}{_prefix_space(timezone)}"
+        return f"When: {start_text} to {end_text} {tz_label}"
 
     dt = start or end
     assert dt is not None
-    return f"When: {dt.strftime('%b %d, %Y %I:%M %p').replace(' 0', ' ')}{_prefix_space(timezone)}"
+    return f"When: {dt.strftime('%b %d, %Y %I:%M %p').replace(' 0', ' ')} {tz_label}"
 
 
 def _format_short_date_time(event: Mapping[str, Any]) -> str:
+    """Render the When line in event-list rows (compact form).
+
+    Bugfix mirror of `_format_date_time`: same naive-datetime / null-TZ
+    behaviour, same " CT" default suffix.
+    """
     start = _parse_iso_datetime(event.get("start_datetime"))
-    timezone = _value_or_blank(event.get("timezone"))
+    api_tz = _value_or_blank(event.get("timezone"))
+    tz_label = api_tz or "CT"
     if start is None:
         return f"When: {MISSING_FIELD_TEXT}"
-    return f"When: {start.strftime('%b %d, %I:%M %p').replace(' 0', ' ')}{_prefix_space(timezone)}"
+    return f"When: {start.strftime('%b %d, %I:%M %p').replace(' 0', ' ')} {tz_label}"
 
 
 def _format_location(event: Mapping[str, Any]) -> str:

@@ -1,7 +1,7 @@
 import os
 import json
 import logging
-from typing import Dict, Optional
+from typing import Dict, Iterable, Optional
 from dotenv import load_dotenv
 
 from entity_extractor import extract_entities
@@ -300,7 +300,16 @@ def _classify_with_jaccard(message: str, entities: dict) -> Dict:
         has_signal = False
 
     # -------- Scores --------
-    keyword_score = jaccard_similarity(tokens, INTENT_KEYWORDS.get(intent, set()))
+    # Bugfix (post-Week-12 audit): the Jaccard score must compare tokens
+    # against a *tokenised* keyword set. Previously some entries in
+    # INTENT_KEYWORDS were multi-word phrases like "any events" or "what's
+    # happening" — they routed correctly via the substring scan above, but
+    # they could never enter the Jaccard intersection (since `tokens` is a
+    # set of single words). They DID inflate the union, structurally
+    # depressing Jaccard scores. Splitting on whitespace and merging back
+    # into a flat single-word set fixes both halves of the bug.
+    keyword_set_flat = _flatten_keyword_set(INTENT_KEYWORDS.get(intent, set()))
+    keyword_score = jaccard_similarity(tokens, keyword_set_flat)
     entity_score = compute_entity_score(entities)
 
     if intent in ["event_specific", "time_based", "recurring_schedule"]:
@@ -310,17 +319,36 @@ def _classify_with_jaccard(message: str, entities: dict) -> Dict:
     else:
         confidence = 0.2 * entity_score + 0.8 * keyword_score
 
-    # Week 12 fix: floor non-ambiguous confidence at 0.5 so the downstream
-    # threshold gate doesn't kick a *correctly-classified* Jaccard hit to
-    # clarification just because the keyword set is small.
-    if has_signal:
-        confidence = max(confidence, 0.5)
+    # Bugfix (post-Week-12 audit): the previous `max(confidence, 0.5)` floor
+    # was a workaround for the multi-word-keyword bug above — once that's
+    # fixed, the raw Jaccard+entity blend produces honest values in the
+    # 0.10–0.95 range. The downstream clarification gate no longer relies on
+    # this number at all (it routes on `intent == "ambiguous"` and the
+    # `has_signal` flag), so dropping the floor exposes real signal without
+    # changing routing.
 
     return {
         "intent": intent,
         "confidence": round(confidence, 2),
         "has_signal": has_signal,
     }
+
+
+def _flatten_keyword_set(keywords: Iterable) -> set:
+    """Split multi-word keyword entries into individual tokens.
+
+    INTENT_KEYWORDS doubles as (a) a substring set for routing and (b) the
+    keyword reference set for Jaccard scoring. The two uses pull in opposite
+    directions: routing wants whole phrases like "any events" so they match
+    contiguously in `msg`, but Jaccard wants single tokens so they can match
+    the tokenised user message. This helper produces the single-token view.
+    """
+    flat: set = set()
+    for entry in keywords:
+        for word in str(entry).lower().split():
+            if word:
+                flat.add(word)
+    return flat
 
 
 # -------------------------------
