@@ -431,11 +431,15 @@ def main() -> int:
     log.info("EVENTS_API_BASE_URL = %s", API_BASE)
 
     # Allow test runs without burning Gemini free-tier quota by forcing the
-    # Jaccard fallback for every classification.
+    # Jaccard fallback for every classification. Round-3: also disable the
+    # Ollama Cloud tier so the test exercises pure Jaccard semantics. The
+    # cloud LLM is helpful for production fallback but its intent labels
+    # don't match the strict expected-intent table here.
     if os.getenv("FORCE_JACCARD_ONLY", "0") == "1":
         import intent_classifier as _ic
         _ic._classify_with_gemini = lambda _msg: None  # type: ignore
-        log.warning("FORCE_JACCARD_ONLY=1 — Gemini path disabled for this run.")
+        _ic._classify_with_ollama_cloud = lambda _msg: None  # type: ignore
+        log.warning("FORCE_JACCARD_ONLY=1 — Gemini and Ollama Cloud paths disabled.")
     else:
         log.info("Warming up Gemini ...")
         warm_up()

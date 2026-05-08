@@ -88,6 +88,16 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
     session_data.setdefault("last_shown_event_ids", [])
     session_data["last_intent"] = raw_classification.get("intent")
 
+    # Bugfix (Round-3, R3-1): clear the session's selected_event_id when
+    # the current message brings any fresh entity / query of its own.
+    # Without this clear, a numbered selection ("2") would leak its event
+    # id into every subsequent turn — so "where is the temple?" or
+    # "when is the holi event?" would silently target the previously
+    # selected event instead of the one the user just asked about.
+    fresh_entities = (raw_classification.get("entities") or {}) if isinstance(raw_classification.get("entities"), dict) else {}
+    if any(fresh_entities.get(k) for k in ("event_name", "program_name", "timeframe")) or len(body_text.split()) > 4:
+        session_data["selected_event_id"] = None
+
     # Bugfix (post-Week-12 audit): support bare numeric replies like "2" as a
     # follow-up to a previously shown event list. The list response says
     # "Reply with: 1, 2, or 3 for full details" — if the previous turn pushed

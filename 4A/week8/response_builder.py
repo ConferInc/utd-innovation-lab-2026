@@ -157,10 +157,23 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             return _truncate_whatsapp(_format_sponsorship(event))
 
         if intent in {"logistics", "parking", "logistics_parking"}:
-            # Week 12 fix (Bug 2): same raw-message fallback as event_specific.
+            # Bugfix (Round-3, R3-3): if the user is asking about the temple
+            # itself ("where is the temple?", "temple address", "what time
+            # does the temple open?") and didn't reference an event, return
+            # the static temple-info block. Without this branch the bot was
+            # picking up `selected_event_id` from session memory and
+            # returning logistics for the *previously selected* event.
+            if event_id is None and _is_venue_question(session_context):
+                return _truncate_whatsapp(_format_temple_info())
+
             search_term = _search_term_with_message_fallback(query, classified_intent, session_context)
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
+                # No specific event resolved — fall back to temple-info,
+                # which is almost always what a generic logistics question
+                # without a target wants.
+                if event_id is None:
+                    return _truncate_whatsapp(_format_temple_info())
                 return _format_no_results(search_term or "your request")
             return _truncate_whatsapp(_format_logistics(event))
 
@@ -333,17 +346,58 @@ def _strip_question_words(text: str) -> str:
 
 
 def _resolve_event_id(classified_intent: Mapping[str, Any], session_context: Mapping[str, Any]) -> Optional[int]:
-    candidates = [
-        classified_intent.get("event_id"),
-        classified_intent.get("id"),
-        session_context.get("selected_event_id"),
-        session_context.get("event_id"),
-    ]
-    for value in candidates:
-        parsed = _coerce_int(value)
-        if parsed is not None:
-            return parsed
-    return None
+    """Pick the event ID this turn should target.
+
+    Bugfix (Round-3, R3-1): the previous version always fell back to
+    ``session_context["selected_event_id"]`` whenever the current
+    classification didn't carry an explicit ``event_id``. After the user
+    replied "2" to a list (which sets selected_event_id=27 for the rest
+    of the session), every subsequent question without its own event_id
+    picked up event_id=27. That made
+        "where is the temple?"  -> Bay Area LTP logistics
+        "when is the holi event" -> Bay Area LTP details
+    even though the classifier had correctly extracted "Holi" or marked
+    the question as a venue lookup.
+
+    New rule: the session id is only consulted when the current message
+    is genuinely a follow-up to the *same* event — that means ALL of
+    the following must be true:
+        - no explicit event_id on the classification
+        - no event_name in entities
+        - no program_name in entities
+        - no fresh search query
+        - the user_message is short enough to be a pronoun follow-up
+          ("for it?", "and parking?", "yes", "tell me more")
+    Otherwise we treat the current turn as a brand-new topic and ignore
+    session memory.
+    """
+    explicit = _coerce_int(classified_intent.get("event_id")) or _coerce_int(classified_intent.get("id"))
+    if explicit is not None:
+        return explicit
+
+    entities = classified_intent.get("entities") or {}
+    if not isinstance(entities, Mapping):
+        entities = {}
+
+    has_fresh_signal = bool(
+        entities.get("event_name")
+        or entities.get("program_name")
+        or entities.get("timeframe")
+        or classified_intent.get("query")
+        or classified_intent.get("event_name")
+    )
+    if has_fresh_signal:
+        return None
+
+    user_message = str(session_context.get("user_message") or "").strip()
+    looks_like_followup = (
+        user_message == ""
+        or len(user_message.split()) <= 4
+    )
+    if not looks_like_followup:
+        return None
+
+    return _coerce_int(session_context.get("selected_event_id")) or _coerce_int(session_context.get("event_id"))
 
 
 def _coerce_int(value: Any) -> Optional[int]:
@@ -841,6 +895,83 @@ def _format_event_list(events: Sequence[Mapping[str, Any]], query: str) -> str:
     return "\n".join(lines).strip()
 
 
+_VENUE_QUESTION_TOKENS = frozenset({
+    "temple", "jkyog", "venue", "place", "located", "location",
+    "address", "addresses", "directions", "where", "hours",
+    "opening", "closing", "phone", "contact", "visit",
+})
+
+
+def _is_venue_question(session_context: Mapping[str, Any]) -> bool:
+    """True when the user's raw message looks like a generic
+    temple-as-a-place question rather than a logistics question about a
+    specific event.
+
+    Examples that should match:
+        "Where is the temple?"
+        "What is the temple address?"
+        "Temple hours"
+        "How do I contact JKYog?"
+
+    Examples that should NOT match (an event is in scope):
+        "Where is the Holi event?"  -> event_specific intent already
+        "Parking for the retreat?"  -> a fresh search term is present
+    """
+    raw = str(session_context.get("user_message") or "").lower()
+    if not raw:
+        return False
+    tokens = {tok.strip("?.,!;:") for tok in raw.split() if tok}
+    # Must be a *short* question (so we don't catch "where is the holi
+    # festival at the temple this weekend?") and must overlap the venue
+    # vocabulary.
+    if len(tokens) > 6:
+        return False
+    return bool(tokens & _VENUE_QUESTION_TOKENS)
+
+
+def _format_temple_info() -> str:
+    """The static "everything about the temple" block.
+
+    Bugfix (Round-3, R3-3): the user explicitly framed this bot as a
+    temple bot — "everything about the temple it should know". Generic
+    venue questions used to hit the event-search path and either
+    returned the previously-selected event's logistics block (because of
+    R3-1) or "no events found". Now they get a real answer. Source: the
+    JKYog Radha Krishna Temple public information page.
+    """
+    return "\n".join([
+        "*JKYog Radha Krishna Temple*",
+        "",
+        "🏛️ *Address*",
+        "1610 W Whitestone Blvd, Suite #100",
+        "Cedar Park, TX 78613, USA",
+        "",
+        "📞 *Contact*",
+        "Phone / WhatsApp: +1 (469) 444-7173",
+        "Email: contact@jkyog.org",
+        "",
+        "🕐 *Daily darshan hours (CT)*",
+        "Weekdays: 9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM",
+        "Weekends: 9:30 AM – 8:30 PM",
+        "",
+        "🙏 *Daily programs (CT)*",
+        "- Bhog: 11:30 AM – 12:00 PM",
+        "- Aarti: 12:15 PM – 12:45 PM, 7:00 PM – 7:30 PM",
+        "- Bhajans: 6:00 PM – 7:00 PM",
+        "",
+        "🌅 *Sunday Satsang*: 10:30 AM – 12:30 PM CT",
+        "🍽️ *Mahaprasad after Sunday Satsang*: 12:30 PM – 1:30 PM CT",
+        "",
+        "🌐 *Online*",
+        "Website: jkyog.org",
+        "Donations: jkyog.org/donate",
+        "Live stream: jkyog.org/live",
+        "",
+        "Ask me about: *upcoming events*, *Sunday Satsang*, "
+        "*aarti times*, *donations*, or *parking* for a specific event.",
+    ]).strip()
+
+
 def _format_no_results(query: str) -> str:
     return (
         f"I could not find any matching events for *{query}* right now.\n\n"
@@ -1106,10 +1237,61 @@ def _parse_iso_datetime(value: Any) -> Optional[datetime]:
         return None
 
 
+_MOJIBAKE_FIXES = {
+    # Common UTF-8-as-Latin-1 misdecodings produced by the 4B scraper.
+    # The replacement character `�` shows up in the API response as
+    # `â\xa0` etc — try UTF-8 round-trip first, then fall back to a few
+    # known-bad pairs.
+    "â": "–",   # en-dash
+    "â": "—",   # em-dash
+    "â": "‘",   # left single quote
+    "â": "’",   # right single quote
+    "â": "“",   # left double quote
+    "â": "”",   # right double quote
+    "â¦": "…",        # ellipsis
+    # Visible artefacts the API actually emitted, captured from the
+    # 2026-05-08 WhatsApp test (Holi description: "18th February â 22nd …"):
+    "â ": "–",
+    "â ": "– ",
+    "Â ": " ",         # NBSP misdecoded
+}
+
+
+def _repair_mojibake(text: str) -> str:
+    """Best-effort fix for UTF-8-decoded-as-Latin-1 strings from the API.
+
+    Bugfix (Round-3, R3-4): the 4B scraper writes mis-decoded UTF-8 into
+    `description` / `notes` for some event rows (Holi Sadhana Shivir's
+    description reads "18th February â 22nd February 2026"). We can't
+    fix the scraper from here, but we can normalise on the way out so
+    users don't see garbage. Tries a clean UTF-8 round-trip first; if
+    that produces a longer-than-original or differently-broken string
+    it falls back to a small substitution table of pairs we've seen in
+    the wild.
+    """
+    if not text or "â" not in text and "Â" not in text:
+        return text
+    # Path 1: UTF-8 round-trip — works when the upstream string was
+    # latin-1-decoded UTF-8 bytes.
+    try:
+        repaired = text.encode("latin-1").decode("utf-8")
+        # Only accept the round-trip if it didn't introduce new replacement
+        # characters and didn't get longer (sanity).
+        if "�" not in repaired and len(repaired) <= len(text):
+            return repaired
+    except (UnicodeDecodeError, UnicodeEncodeError):
+        pass
+    # Path 2: known-bad substitutions.
+    out = text
+    for bad, good in _MOJIBAKE_FIXES.items():
+        out = out.replace(bad, good)
+    return out
+
+
 def _value_or_blank(value: Any) -> str:
     if value is None:
         return ""
-    text = str(value).strip()
+    text = _repair_mojibake(str(value).strip())
     return text
 
 

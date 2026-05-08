@@ -224,6 +224,87 @@ def _classify_with_gemini(user_message: str) -> Dict | None:
 
 
 # -------------------------------
+# OLLAMA CLOUD CLASSIFIER (FALLBACK)
+# -------------------------------
+# Bugfix (Round-3, R3-6): Gemini's free-tier daily quota is 20 requests/day
+# on `gemini-2.5-flash-lite`, so production runs hit 429 by lunchtime. We
+# add a second LLM tier using Ollama Cloud's OpenAI-compatible API. The
+# classifier tries Gemini → Ollama Cloud → Jaccard, in that order, so a
+# Gemini quota miss no longer collapses to keyword-only matching.
+#
+# Auth: bearer key in `OLLAMA_CLOUD_API_KEY`.
+# Endpoint: `https://ollama.com/v1/chat/completions` (OpenAI-compatible).
+# Default model: `gemma3:4b` (small, fast, well-suited to a tiny
+# JSON-classification prompt). Override via `OLLAMA_CLOUD_MODEL` if a
+# larger model is desired (e.g. `gpt-oss:20b`, `qwen3-coder-next`,
+# `glm-5`, `kimi-k2:1t`).
+_OLLAMA_CLOUD_BASE = "https://ollama.com/v1"
+_OLLAMA_CLOUD_DEFAULT_MODEL = "gemma3:4b"
+
+
+def _classify_with_ollama_cloud(user_message: str) -> Dict | None:
+    api_key = (
+        os.getenv("OLLAMA_CLOUD_API_KEY")
+        or os.getenv("OLLAMA_API_KEY")
+        # Backwards compat: an earlier draft of this adapter used ZAI_API_KEY.
+        or os.getenv("ZAI_API_KEY")
+    )
+    if not api_key:
+        return None
+
+    base = (os.getenv("OLLAMA_CLOUD_BASE_URL") or _OLLAMA_CLOUD_BASE).rstrip("/")
+    model = os.getenv("OLLAMA_CLOUD_MODEL") or _OLLAMA_CLOUD_DEFAULT_MODEL
+    url = f"{base}/chat/completions"
+
+    payload = {
+        "model": model,
+        "temperature": 0,
+        "max_tokens": 60,
+        # Ollama-Cloud-specific: ask the model to keep the response short by
+        # giving the system prompt and user message verbatim.
+        "messages": [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": user_message},
+        ],
+    }
+
+    try:
+        # Lazy import so the module loads cleanly when httpx isn't present
+        # (e.g. constrained test environments).
+        import httpx
+        headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+        with httpx.Client(timeout=8.0) as client:
+            resp = client.post(url, headers=headers, json=payload)
+        if resp.status_code != 200:
+            log.debug("Ollama Cloud classify HTTP %s: %s", resp.status_code, resp.text[:200])
+            return None
+        data = resp.json()
+        content = data["choices"][0]["message"]["content"].strip()
+        # Strip ``` fences in case the model emits markdown-wrapped JSON.
+        if content.startswith("```"):
+            content = content.strip("`")
+            if content.lower().startswith("json"):
+                content = content[4:].lstrip()
+        # Some models include leading whitespace or a thinking preamble —
+        # locate the first JSON object in the response.
+        first_brace = content.find("{")
+        if first_brace > 0:
+            content = content[first_brace:]
+        last_brace = content.rfind("}")
+        if last_brace >= 0:
+            content = content[: last_brace + 1]
+        result = json.loads(content)
+        return {
+            "intent": result.get("intent", "ambiguous"),
+            "confidence": float(result.get("confidence", 0.0)),
+            "_source": "ollama_cloud",
+        }
+    except Exception as exc:
+        log.debug("Ollama Cloud classify failed; continuing fallback chain. %s", exc)
+        return None
+
+
+# -------------------------------
 # FIXED JACCARD CLASSIFIER
 # -------------------------------
 def _classify_with_jaccard(message: str, entities: dict) -> Dict:
@@ -379,6 +460,7 @@ CLARIFY_THRESHOLD = 0.60
 def classify(message: str) -> Dict:
     entities = extract_entities(message)
 
+    # LLM tier 1: Gemini (best when not 429'd).
     ai_result = _classify_with_gemini(message)
 
     used_jaccard = False
@@ -387,6 +469,25 @@ def classify(message: str) -> Dict:
         used_jaccard = True
     else:
         result = ai_result
+
+    # LLM tier 2: Ollama Cloud — only as a *tie-breaker* when Gemini didn't
+    # answer AND our Jaccard heuristic produced no clear signal (the
+    # "ambiguous, no keyword/entity match" branch). Used this way it
+    # rescues genuinely-unmatchable messages instead of overriding
+    # correct rule-based answers like "Sunday Satsang -> recurring_schedule"
+    # with whatever label gemma3:4b feels like emitting at conf=0.95.
+    # Bugfix (Round-3, R3-6): the previous version called Ollama Cloud
+    # whenever Gemini's confidence was below 0.6, which let the cloud
+    # model overwrite Jaccard's correct answers and broke the regression
+    # suite (32/32 -> 17/32).
+    if (
+        used_jaccard
+        and (result.get("intent") == "ambiguous" or not result.get("has_signal", True))
+    ):
+        cloud = _classify_with_ollama_cloud(message)
+        if cloud and cloud.get("confidence", 0.0) >= CLARIFY_THRESHOLD:
+            result = cloud
+            used_jaccard = False  # cloud answered with confidence
 
     intent = result["intent"]
     confidence = result["confidence"]

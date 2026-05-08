@@ -1,14 +1,28 @@
 # Week-12 Bot-Fixes Plan
 *Source-of-truth for the live test + fix meeting on 2026-05-08.*
 
-> **Update — 2026-05-08, after the fix pass:** P0 work landed on the same
-> `Shrikanth-week12-fixes` branch (no v2). All four code changes (T3 +
-> T4 + T5 + a new T8 to fix the 0.5 confidence floor) are committed, and
-> the 32-case `verify_week12_fixes.py` suite passes 32/32. The 23-case
-> smoke audit on the same branch also reaches the expected outputs for
-> every message that has a clear right answer (recurring schedule, generic
-> donation, date-range filter, past-event filter all working with honest
-> confidence values). Section 9 below records exactly what shipped.
+> **Update — 2026-05-08 12:35 PM, after Round-2 live test:** Round-1
+> (T3+T4+T5+T8) and Round-2 (multi-day display + numbered follow-up)
+> shipped, but **two new bugs surfaced from a real WhatsApp test**:
+>
+> 1. **session.selected_event_id leaks across turns** — once a user
+>    replies "2" to a list, every subsequent question that doesn't have
+>    an event_id of its own picks up event_id=27 (Bay Area LTP) from
+>    session memory. This is the cause of "where is the temple?" →
+>    Bay Area LTP logistics, "when is the holi event" → Bay Area LTP,
+>    and several other "wrong event" responses in the transcript. THE
+>    HEADLINE BUG OF ROUND 3.
+>
+> 2. **EVENT_NAMES list is incomplete** — "Hanuman Jayanti" gets no
+>    entity match, falls into the `event_specific` intent with
+>    event_name=None, which then dumps users into the
+>    selected_event_id leak above OR returns a confused response
+>    based on the stripped raw message.
+>
+> Plus a few smaller things: the API has mojibake (`â��` instead of
+> `–`) in `description` fields because the 4B scraper isn't decoding
+> UTF-8 from the source page properly. The bot can defensively
+> normalise this. Section 11 below is the Round-3 plan.
 
 > **TL;DR — bot is more broken than it was on May 5.** Chanakya pushed two
 > commits May 6 that picked up ~3 of the Week-12 fixes for `response_builder.py`
@@ -440,3 +454,87 @@ User to choose. Code is otherwise ready.
   held in the morning`.
 - One PR open from `Shrikanth-week12-fixes-v2` → `main`, with a note
   asking Yatin/Hermes to ping Subodh + Rohan about T11–T14.
+
+---
+
+## 10. Round-2 fixes (committed earlier today)
+
+- Multi-day events now render as `May 4 – May 9 CT` in the list view
+  (previously only the start `May 4, 1:30 AM CT`, which made multi-day
+  events look like one-shots in the past).
+- Numbered follow-up wired: a bare `2` resolves to the second event
+  in the previous list and re-enters `build_response` with
+  `intent=single_event_detail` and `event_id` set. Stored in
+  `session.last_shown_event_ids`.
+
+These shipped in commit `fc717f2`. The live test that followed exposed
+the bugs in §11.
+
+---
+
+## 11. Round-3 plan — after the live WhatsApp test
+
+### Evidence
+
+WhatsApp transcript snippets (user `+12408280044` in production):
+
+```
+> when is the holi event
+< Bay Area Life Transformation Program 2026
+  When: May 10, 2026 – May 18 CT  …
+```
+
+Expected: Holi Sadhana Shivir details. Got: the Bay Area LTP because
+the user had earlier replied `2`, which set
+`session.selected_event_id = 27`, and `_resolve_event_id` always picks
+that up before it considers the freshly extracted `event_name="Holi"`.
+
+```
+> Where is the temple?
+< Logistics for Bay Area Life Transformation Program 2026  …
+```
+
+Same root cause. Logistics intent + no fresh event_name + leaked
+`selected_event_id=27` → returns BA LTP logistics.
+
+```
+> tell me about hanuman jayanti
+< I'm not sure I caught that …
+< *Holi Sadhana Shivir*  …  18th February â 22nd February 2026 …
+< -
+```
+
+Three messages back, none of them right. The classifier said
+`event_specific` but `event_name=None` because Hanuman Jayanti is not
+in `EVENT_NAMES`. The mojibake `â��` (an en-dash that wasn't decoded
+correctly) is in `description` from the 4B API.
+
+### Bug map → fix map
+
+| # | Bug | Root cause | Fix |
+|---|---|---|---|
+| **R3-1** | `selected_event_id` leaks across turns | `_resolve_event_id` always uses session id when classification has no `event_id` | Only use session id when current message is a follow-up — i.e. has no entities, no fresh query, AND intent is `logistics`/`sponsorship`/`single_event_detail` paired with explicit pronouns ("for it", "what about parking"). On any new top-level question, ignore session id. Plus: `main.py` clears session id when the current intent has any entity. |
+| **R3-2** | `EVENT_NAMES` list is stale + manual | hand-maintained, missing Hanuman Jayanti, Janmashtami in API doesn't match anything currently (also missing) | Replace static list with a startup pull from the live API (`/api/v2/events`), tokenized into a name index. Survives 4B's data churn. |
+| **R3-3** | "Where is the temple?" returns wrong event logistics | Cascade of R3-1 + no static venue answer | When the message is a generic "temple" question and no event is targeted, return a static **temple-info** block (address, hours, contact, livestream URL). Bot becomes the "everything about the temple" knowledge surface the user asked for. |
+| **R3-4** | Mojibake `â��` in API descriptions | 4B scraper writes mis-decoded UTF-8 | Defensive: in `_value_or_blank`, fix the common pair `â\x80\x93` → `–` and `â\x80\x99` → `’`. Doesn't fix the 4B side but stops the bot from echoing garbage. |
+| **R3-5** | Stray "- " message | unclear from logs; possibly a list rendering case where a list item has only a prefix | Audit `_format_event_list` and `_format_recurring_response` for `lines.append("- ")` empty bullet paths; guard against empty strings. |
+| **R3-6** | Gemini quota exhausted | hit 20-req/day free tier limit | Add a Z.AI / GLM (`glm-4-flash` or `glm-4-air`) adapter using the user-supplied key as a fallback after Gemini 429. Keep the Jaccard floor as the third tier. |
+| **R3-7** | Dead code: `closed.py`, `time.py`, `schedule-2.py` | re-added during student merges; not imported anywhere | Delete. Add a CI test that fails if any of them come back. |
+
+### Order
+
+1. **R3-1** first — it's responsible for most of the wrong responses in the transcript. One-line fix in `_resolve_event_id` plus a one-line clear in `main.py`. Smoke test.
+2. **R3-3** next — wire a static "Where is the temple?" / "what are temple hours?" / "phone number" answer. Cheap and high-value for the "temple bot" framing.
+3. **R3-4** — defensive mojibake repair. Trivial.
+4. **R3-2** — dynamic EVENT_NAMES. Larger change but high ROI.
+5. **R3-6** — Z.AI / GLM fallback adapter. Self-contained.
+6. **R3-7** — delete dead files.
+
+### Acceptance for Round 3
+
+- After replying to a list with `2`, then asking `where is the temple?` → bot returns the **temple-info block**, not Bay Area LTP logistics.
+- After replying with `2`, then `when is the holi event` → bot returns **Holi Sadhana Shivir**, not Bay Area LTP.
+- "Tell me about Hanuman Jayanti" → either returns a Hanuman Jayanti event if one exists in the API, or a clean "we don't have that on the calendar yet — here's what's coming up" message. **Not** Holi.
+- No `â��` in any bot output.
+- `closed.py`, `time.py`, `schedule-2.py` removed from `4A/week8/`.
+- With Gemini 429'd, classifier still returns useful intents on the 24-case smoke test (≥ 20/24 right, demonstrating the Z.AI fallback works).
