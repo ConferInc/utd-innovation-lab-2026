@@ -6,6 +6,12 @@ node_modules/
 __pycache__/
 *.pyc
 
+# Python virtualenvs (Week 12: students may run .venv locally for debugging)
+.venv/
+venv/
+env/
+*.egg-info/
+
 # Run-output artifacts (Week 7+) — should not be in version control
 .coverage
 *.coverage

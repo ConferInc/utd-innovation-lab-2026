@@ -2,13 +2,14 @@ import os
 import logging
 import time
 import uuid
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, BackgroundTasks
 from fastapi.responses import JSONResponse
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
 from dotenv import load_dotenv
 
-from intent_classifier import classify
+from intent_classifier import classify, warm_up as _warm_up_gemini
 from response_builder import build_response
 
 logging.basicConfig(
@@ -19,7 +20,22 @@ logger = logging.getLogger("main")
 
 load_dotenv()
 
-app = FastAPI(title="JKYog WhatsApp Bot")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Week 12 fix (Bug 5): Warm Gemini on startup so the first real WhatsApp
+    # message does not pay the 25–30s TLS / model-cold-start cost. Twilio's
+    # webhook timeout is 15s; without warm-up, students see "no response".
+    if os.getenv("GEMINI_WARMUP", "1") == "1":
+        try:
+            ok = _warm_up_gemini()
+            logger.info("Gemini warm-up: %s", "ok" if ok else "skipped/failed")
+        except Exception as exc:  # pragma: no cover — safety net
+            logger.warning("Gemini warm-up raised: %s", exc)
+    yield
+
+
+app = FastAPI(title="JKYog WhatsApp Bot", lifespan=lifespan)
 
 ACTIVE_SESSIONS = {}
 
@@ -64,12 +80,48 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
             "user_id": str(uuid.uuid4()),
             "conversation_id": str(uuid.uuid4()),
             "last_intent": None,
-            "selected_event_id": None
+            "selected_event_id": None,
+            "last_shown_event_ids": [],
         }
 
     session_data = ACTIVE_SESSIONS[sender_phone]
+    session_data.setdefault("last_shown_event_ids", [])
     session_data["last_intent"] = raw_classification.get("intent")
-    
+
+    # Bugfix (Round-3, R3-1): clear the session's selected_event_id when
+    # the current message brings any fresh entity / query of its own.
+    # Without this clear, a numbered selection ("2") would leak its event
+    # id into every subsequent turn — so "where is the temple?" or
+    # "when is the holi event?" would silently target the previously
+    # selected event instead of the one the user just asked about.
+    fresh_entities = (raw_classification.get("entities") or {}) if isinstance(raw_classification.get("entities"), dict) else {}
+    if any(fresh_entities.get(k) for k in ("event_name", "program_name", "timeframe")) or len(body_text.split()) > 4:
+        session_data["selected_event_id"] = None
+
+    # Bugfix (post-Week-12 audit): support bare numeric replies like "2" as a
+    # follow-up to a previously shown event list. The list response says
+    # "Reply with: 1, 2, or 3 for full details" — if the previous turn pushed
+    # 5 events into session.last_shown_event_ids, "2" should resolve to the
+    # second of those event IDs and re-enter build_response with intent
+    # event_detail. Done here in main.py so the classifier doesn't have to
+    # learn list-position grammar.
+    selected_id_override = None
+    stripped = body_text.strip()
+    if stripped.isdigit():
+        idx = int(stripped) - 1
+        prev_ids = session_data.get("last_shown_event_ids") or []
+        if 0 <= idx < len(prev_ids):
+            selected_id_override = prev_ids[idx]
+            logger.info(f"NUMBERED FOLLOW-UP: '{stripped}' -> event_id={selected_id_override}")
+            raw_classification = {
+                "intent": "single_event_detail",
+                "confidence": 1.0,
+                "entities": {},
+                "event_id": selected_id_override,
+            }
+            session_data["last_intent"] = "single_event_detail"
+            session_data["selected_event_id"] = selected_id_override
+
     context = {
         "phone_number": sender_phone,
         "api_base_url": os.getenv("EVENTS_API_BASE_URL"),
@@ -77,19 +129,46 @@ def process_message_background(body_text: str, sender_phone: str) -> None:
         "user_id": session_data["user_id"],
         "conversation_id": session_data["conversation_id"],
         "last_intent": session_data["last_intent"],
-        "selected_event_id": session_data["selected_event_id"]
+        "selected_event_id": session_data["selected_event_id"],
+        "last_shown_event_ids": list(session_data.get("last_shown_event_ids") or []),
+        # Week 12 fix (Bug 2): Pass raw user message so the response builder
+        # can use it as a fallback search query when neither the LLM nor the
+        # entity extractor produced an event_name / query string.
+        "user_message": body_text,
     }
 
     # 3. Build Response
-    try:
-        reply_text = build_response(raw_classification, context)
-    except Exception as e:
-        logger.error(f"Response Builder Failed: {e}", exc_info=True)
-        reply_text = ""
+    intent_str = raw_classification.get("intent")
 
-    # 4. Graceful Fallback
-    if not reply_text or len(reply_text.strip()) == 0 or raw_classification.get("intent") in ["clarification_needed", "ambiguous", "unknown"]:
-        reply_text = "I'm having trouble understanding that right now. Try: 'What events are happening this weekend?'"
+    # Week 12 fix (Bug 4): For clarification / ambiguous / unknown we never
+    # call build_response — go straight to the clarification prompt.
+    if intent_str in ("clarification_needed", "ambiguous", "unknown"):
+        reply_text = (
+            "I'm not sure I caught that. You can ask me about:\n"
+            "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
+            "- a *specific event* (e.g. \"tell me about Holi\")\n"
+            "- *recurring temple schedule* (e.g. \"when is Sunday Satsang?\")\n"
+            "- *parking / logistics* for an event\n"
+            "- *donations / seva*"
+        )
+    else:
+        try:
+            reply_text = build_response(raw_classification, context)
+        except Exception as e:
+            logger.error(f"Response Builder Failed: {e}", exc_info=True)
+            reply_text = ""
+
+        # 4. Graceful Fallback for empty replies only.
+        if not reply_text or len(reply_text.strip()) == 0:
+            reply_text = (
+                "I'm having trouble understanding that right now. "
+                "Try: 'What events are happening this weekend?'"
+            )
+
+        # Persist any list-of-event-IDs the response builder showed so the
+        # next bare-digit reply ("2") can resolve to one of them.
+        if "last_shown_event_ids" in context:
+            session_data["last_shown_event_ids"] = list(context.get("last_shown_event_ids") or [])
 
     # 5. Send Message
     try:
