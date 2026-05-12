@@ -21,3 +21,5 @@ services:
         sync: false
       - key: EVENTS_API_BEARER_TOKEN
         sync: false
+      - key: DATABASE_URL
+        sync: false
