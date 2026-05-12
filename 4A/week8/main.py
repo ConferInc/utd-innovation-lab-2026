@@ -1,23 +1,28 @@
-import os
 import logging
+import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, Request, BackgroundTasks
+from typing import Any, Dict, Optional
+
+from dotenv import load_dotenv
+from fastapi import BackgroundTasks, FastAPI, Request
 from fastapi.responses import JSONResponse
 from twilio.request_validator import RequestValidator
 from twilio.rest import Client
-from dotenv import load_dotenv
 
-from intent_classifier import classify, warm_up as _warm_up_gemini
-from response_builder import build_response
 from database import (
     SessionLocal,
+    check_database_health,
     get_or_create_active_conversation,
     get_or_create_user,
+    init_database,
     log_message,
     normalize_twilio_phone,
+    update_message,
 )
+from intent_classifier import classify, warm_up as _warm_up_gemini
+from response_builder import build_response
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -27,9 +32,35 @@ logger = logging.getLogger("main")
 
 load_dotenv()
 
+REQUIRED_RUNTIME_ENV = (
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "TWILIO_WHATSAPP_FROM",
+    "EVENTS_API_BASE_URL",
+)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    db_init = init_database()
+    if db_init.get("enabled"):
+        logger.info(
+            "Database bootstrap status=%s columns_added=%s",
+            db_init.get("status"),
+            ",".join(db_init.get("columns_added") or []) or "none",
+        )
+    else:
+        logger.warning("Database logging disabled: %s", db_init.get("reason"))
+
+    missing_env = _missing_env_vars(REQUIRED_RUNTIME_ENV)
+    if missing_env:
+        logger.warning("Missing runtime environment variables: %s", ", ".join(missing_env))
+
+    if _signature_validation_enabled() and not os.getenv("TWILIO_AUTH_TOKEN"):
+        logger.warning(
+            "Twilio signature validation is enabled for production but TWILIO_AUTH_TOKEN is missing."
+        )
+
     # Week 12 fix (Bug 5): Warm Gemini on startup so the first real WhatsApp
     # message does not pay the 25–30s TLS / model-cold-start cost. Twilio's
     # webhook timeout is 15s; without warm-up, students see "no response".
@@ -47,12 +78,92 @@ app = FastAPI(title="JKYog WhatsApp Bot", lifespan=lifespan)
 ACTIVE_SESSIONS = {}
 
 
+def _missing_env_vars(names) -> list[str]:
+    return [name for name in names if not os.getenv(name)]
+
+
+def _signature_validation_enabled() -> bool:
+    return os.getenv("ENV") == "production"
+
+
+def _database_snapshot() -> Dict[str, Any]:
+    snapshot = check_database_health()
+    if not snapshot.get("enabled"):
+        return snapshot
+    return snapshot
+
+
+def _readiness_snapshot() -> Dict[str, Any]:
+    db = _database_snapshot()
+    missing_env = _missing_env_vars(REQUIRED_RUNTIME_ENV)
+    signature_validation = {
+        "enabled": _signature_validation_enabled(),
+        "configured": bool(os.getenv("TWILIO_AUTH_TOKEN")),
+    }
+    ready = not missing_env and (not db.get("enabled") or db.get("healthy"))
+    return {
+        "ready": ready,
+        "environment": os.getenv("ENV", "development"),
+        "missing_env": missing_env,
+        "signature_validation": signature_validation,
+        "database": db,
+    }
+
+
+def _get_or_create_session(sender_phone: str) -> Dict[str, Any]:
+    max_sessions = 1000
+    if sender_phone not in ACTIVE_SESSIONS:
+        if len(ACTIVE_SESSIONS) >= max_sessions:
+            oldest_session_key = next(iter(ACTIVE_SESSIONS))
+            del ACTIVE_SESSIONS[oldest_session_key]
+            logger.warning("Session limit reached. Evicted oldest session: %s", oldest_session_key)
+
+        ACTIVE_SESSIONS[sender_phone] = {
+            "user_id": str(uuid.uuid4()),
+            "conversation_id": str(uuid.uuid4()),
+            "last_intent": None,
+            "selected_event_id": None,
+            "last_shown_event_ids": [],
+        }
+
+    session_data = ACTIVE_SESSIONS[sender_phone]
+    session_data.setdefault("last_shown_event_ids", [])
+    return session_data
+
+
+def _persist_message_update(db, message, **kwargs) -> None:
+    if not db or message is None:
+        return
+    try:
+        update_message(db, message, **kwargs)
+    except Exception as exc:
+        logger.warning("Database message update failed: %s", exc, exc_info=True)
+        db.rollback()
+
+
+def _build_clarification_reply() -> str:
+    return (
+        "I'm not sure I caught that. You can ask me about:\n"
+        "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
+        "- a *specific event* (e.g. \"tell me about Holi\")\n"
+        "- *recurring temple schedule* (e.g. \"when is Sunday Satsang?\")\n"
+        "- *parking / logistics* for an event\n"
+        "- *donations / seva*"
+    )
+
+
 def send_whatsapp_message(to: str, body: str) -> str:
+    missing_env = _missing_env_vars(("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM"))
+    if missing_env:
+        raise RuntimeError(
+            "Missing Twilio environment variables: " + ", ".join(missing_env)
+        )
+
     client = Client(os.environ["TWILIO_ACCOUNT_SID"], os.environ["TWILIO_AUTH_TOKEN"])
     formatted_to = to if to.startswith("whatsapp:") else f"whatsapp:{to if to.startswith('+') else '+' + to}"
 
     msg = client.messages.create(
-        from_=os.environ.get("TWILIO_WHATSAPP_FROM", ""),
+        from_=os.environ["TWILIO_WHATSAPP_FROM"],
         body=body,
         to=formatted_to,
     )
@@ -62,69 +173,133 @@ def send_whatsapp_message(to: str, body: str) -> str:
 def process_message_background(
     body_text: str,
     sender_phone: str,
-    profile_name: str | None = None,
+    profile_name: Optional[str] = None,
+    *,
+    inbound_message_sid: Optional[str] = None,
+    twilio_identifiers: Optional[Dict[str, Any]] = None,
+    webhook_received_at: Optional[float] = None,
+    correlation_id: Optional[str] = None,
 ) -> None:
     db = SessionLocal() if SessionLocal else None
     start_time = time.monotonic()
+    correlation_id = correlation_id or inbound_message_sid or uuid.uuid4().hex[:12]
+    queue_delay_ms = int((start_time - webhook_received_at) * 1000) if webhook_received_at else 0
+    api_metrics: list[Dict[str, Any]] = []
+    session_data = _get_or_create_session(sender_phone)
+    inbound_message = None
+    conv_for_log = None
+
     try:
+        if db:
+            try:
+                phone_key = normalize_twilio_phone(sender_phone)
+                user = get_or_create_user(db, phone_key, name=profile_name)
+                conv = get_or_create_active_conversation(db, user.id)
+                conv_for_log = conv.id
+                session_data["user_id"] = str(user.id)
+                session_data["conversation_id"] = str(conv.id)
+                inbound_message = log_message(
+                    db,
+                    conv_for_log,
+                    "inbound",
+                    body_text,
+                    status="received",
+                    twilio_message_sid=inbound_message_sid,
+                    correlation_id=correlation_id,
+                    metadata_json={
+                        "queue_delay_ms": queue_delay_ms,
+                        "profile_name": profile_name,
+                        "twilio_identifiers": dict(twilio_identifiers or {}),
+                    },
+                )
+            except Exception as exc:
+                logger.warning("Database logging (inbound) failed; continuing: %s", exc, exc_info=True)
+                db.rollback()
+                conv_for_log = None
+                inbound_message = None
+
+        logger.info(
+            "message_flow_start correlation_id=%s inbound_sid=%s sender=%s queue_delay_ms=%s",
+            correlation_id,
+            inbound_message_sid or "",
+            sender_phone,
+            queue_delay_ms,
+        )
+
         # Simple greeting bypass — still persist to Team 4B Postgres when configured.
         if body_text.lower().strip() in ["hi", "hello", "hey", "namaste", "start"]:
             reply_text = (
                 "Namaste! 🙏 Welcome to the JKYog Temple bot. You can ask me about upcoming events, "
                 "parking info, or specific schedules like Sunday Satsang."
             )
-            conv_for_log = None
-            if db:
-                try:
-                    phone_key = normalize_twilio_phone(sender_phone)
-                    user = get_or_create_user(db, phone_key, name=profile_name)
-                    conv = get_or_create_active_conversation(db, user.id)
-                    conv_for_log = conv.id
-                    log_message(db, conv_for_log, "inbound", body_text, intent="greeting")
-                except Exception as exc:
-                    logger.warning("Database logging (greeting inbound) failed; continuing: %s", exc, exc_info=True)
-                    db.rollback()
-                    conv_for_log = None
+            send_started = time.monotonic()
+            outbound_sid = None
+            send_error = None
             try:
-                send_whatsapp_message(to=sender_phone, body=reply_text)
-            except Exception as e:
-                logger.error(f"Failed to send Twilio message: {e}", exc_info=True)
+                outbound_sid = send_whatsapp_message(to=sender_phone, body=reply_text)
+            except Exception as exc:
+                send_error = str(exc)
+                logger.error("Failed to send Twilio greeting message: %s", exc, exc_info=True)
+            send_latency_ms = int((time.monotonic() - send_started) * 1000)
+            total_latency_ms = int((time.monotonic() - start_time) * 1000)
+            inbound_status = "send_failed" if send_error else "processed"
+
+            _persist_message_update(
+                db,
+                inbound_message,
+                intent="greeting",
+                status=inbound_status,
+                failure_reason=send_error,
+                total_latency_ms=total_latency_ms,
+                metadata_json={
+                    "queue_delay_ms": queue_delay_ms,
+                    "classification_latency_ms": 0,
+                    "response_build_latency_ms": 0,
+                    "upstream_api_latency_ms": 0,
+                    "send_latency_ms": send_latency_ms,
+                },
+            )
+
             if db and conv_for_log:
                 try:
-                    log_message(db, conv_for_log, "outbound", reply_text, intent="greeting")
+                    log_message(
+                        db,
+                        conv_for_log,
+                        "outbound",
+                        reply_text,
+                        intent="greeting",
+                        twilio_message_sid=outbound_sid,
+                        status="sent" if not send_error else "send_failed",
+                        failure_reason=send_error,
+                        correlation_id=correlation_id,
+                        metadata_json={"send_latency_ms": send_latency_ms},
+                        total_latency_ms=send_latency_ms,
+                    )
                 except Exception as exc:
                     logger.warning("Database logging (greeting outbound) failed: %s", exc, exc_info=True)
                     db.rollback()
+
+            logger.info(
+                "message_flow_done correlation_id=%s intent=greeting outbound_sid=%s send_ms=%s total_ms=%s status=%s",
+                correlation_id,
+                outbound_sid or "",
+                send_latency_ms,
+                total_latency_ms,
+                inbound_status,
+            )
             return
 
         # 1. AI Classification
+        classification_started = time.monotonic()
+        classification_error = None
         try:
             raw_classification = classify(body_text)
-            logger.info(f"AI CLASSIFICATION: {raw_classification}")
-        except Exception as e:
-            logger.error(f"Classification Failed: {e}", exc_info=True)
+            logger.info("AI CLASSIFICATION correlation_id=%s result=%s", correlation_id, raw_classification)
+        except Exception as exc:
+            classification_error = str(exc)
+            logger.error("Classification failed: %s", exc, exc_info=True)
             raw_classification = {"intent": "unknown", "entities": {}, "confidence": 0.0}
-
-        # 2. WEEK 11 TASK 4: Bounded Session Management (Max 1000)
-        MAX_SESSIONS = 1000
-
-        if sender_phone not in ACTIVE_SESSIONS:
-            # Evict the oldest session if we hit the limit to prevent memory leaks
-            if len(ACTIVE_SESSIONS) >= MAX_SESSIONS:
-                oldest_session_key = next(iter(ACTIVE_SESSIONS))
-                del ACTIVE_SESSIONS[oldest_session_key]
-                logger.warning(f"Session limit reached. Evicted oldest session: {oldest_session_key}")
-
-            ACTIVE_SESSIONS[sender_phone] = {
-                "user_id": str(uuid.uuid4()),
-                "conversation_id": str(uuid.uuid4()),
-                "last_intent": None,
-                "selected_event_id": None,
-                "last_shown_event_ids": [],
-            }
-
-        session_data = ACTIVE_SESSIONS[sender_phone]
-        session_data.setdefault("last_shown_event_ids", [])
+        classification_latency_ms = int((time.monotonic() - classification_started) * 1000)
         session_data["last_intent"] = raw_classification.get("intent")
 
         # Bugfix (Round-3, R3-1): clear the session's selected_event_id when
@@ -154,7 +329,7 @@ def process_message_background(
             prev_ids = session_data.get("last_shown_event_ids") or []
             if 0 <= idx < len(prev_ids):
                 selected_id_override = prev_ids[idx]
-                logger.info(f"NUMBERED FOLLOW-UP: '{stripped}' -> event_id={selected_id_override}")
+                logger.info("NUMBERED FOLLOW-UP correlation_id=%s '%s' -> event_id=%s", correlation_id, stripped, selected_id_override)
                 raw_classification = {
                     "intent": "single_event_detail",
                     "confidence": 1.0,
@@ -163,27 +338,6 @@ def process_message_background(
                 }
                 session_data["last_intent"] = "single_event_detail"
                 session_data["selected_event_id"] = selected_id_override
-
-        conv_for_log = None
-        if db:
-            try:
-                phone_key = normalize_twilio_phone(sender_phone)
-                user = get_or_create_user(db, phone_key, name=profile_name)
-                conv = get_or_create_active_conversation(db, user.id)
-                conv_for_log = conv.id
-                log_message(
-                    db,
-                    conv_for_log,
-                    "inbound",
-                    body_text,
-                    intent=session_data.get("last_intent"),
-                )
-                session_data["user_id"] = str(user.id)
-                session_data["conversation_id"] = str(conv.id)
-            except Exception as exc:
-                logger.warning("Database logging (inbound) failed; continuing: %s", exc, exc_info=True)
-                db.rollback()
-                conv_for_log = None
 
         context = {
             "phone_number": sender_phone,
@@ -198,31 +352,34 @@ def process_message_background(
             # can use it as a fallback search query when neither the LLM nor the
             # entity extractor produced an event_name / query string.
             "user_message": body_text,
+            "api_observer": api_metrics.append,
+            "correlation_id": correlation_id,
         }
 
         # 3. Build Response
         intent_str = raw_classification.get("intent")
+        build_latency_ms = 0
+        build_error = None
 
         # Week 12 fix (Bug 4): For clarification / ambiguous / unknown we never
         # call build_response — go straight to the clarification prompt.
         if intent_str in ("clarification_needed", "ambiguous", "unknown"):
-            reply_text = (
-                "I'm not sure I caught that. You can ask me about:\n"
-                "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
-                "- a *specific event* (e.g. \"tell me about Holi\")\n"
-                "- *recurring temple schedule* (e.g. \"when is Sunday Satsang?\")\n"
-                "- *parking / logistics* for an event\n"
-                "- *donations / seva*"
-            )
+            reply_text = _build_clarification_reply()
         else:
+            build_started = time.monotonic()
             try:
                 reply_text = build_response(raw_classification, context)
-            except Exception as e:
-                logger.error(f"Response Builder Failed: {e}", exc_info=True)
+            except Exception as exc:
+                build_error = str(exc)
+                logger.error("Response Builder Failed: %s", exc, exc_info=True)
                 reply_text = ""
+            finally:
+                build_latency_ms = int((time.monotonic() - build_started) * 1000)
 
             # 4. Graceful Fallback for empty replies only.
             if not reply_text or len(reply_text.strip()) == 0:
+                if build_error is None:
+                    build_error = "empty_response"
                 reply_text = (
                     "I'm having trouble understanding that right now. "
                     "Try: 'What events are happening this weekend?'"
@@ -234,19 +391,79 @@ def process_message_background(
                 session_data["last_shown_event_ids"] = list(context.get("last_shown_event_ids") or [])
 
         # 5. Send Message
+        send_started = time.monotonic()
+        outbound_sid = None
+        send_error = None
         try:
-            send_whatsapp_message(to=sender_phone, body=reply_text)
-            elapsed = int((time.monotonic() - start_time) * 1000)
-            logger.info(f"Message processed and sent successfully in {elapsed}ms to {sender_phone}")
-        except Exception as e:
-            logger.error(f"Failed to send Twilio message: {e}", exc_info=True)
+            outbound_sid = send_whatsapp_message(to=sender_phone, body=reply_text)
+        except Exception as exc:
+            send_error = str(exc)
+            logger.error("Failed to send Twilio message: %s", exc, exc_info=True)
+        send_latency_ms = int((time.monotonic() - send_started) * 1000)
+        total_latency_ms = int((time.monotonic() - start_time) * 1000)
+        upstream_api_latency_ms = sum(int(metric.get("elapsed_ms") or 0) for metric in api_metrics)
+
+        if send_error:
+            inbound_status = "send_failed"
+        elif build_error or classification_error:
+            inbound_status = "fallback_sent"
+        else:
+            inbound_status = "processed"
+
+        _persist_message_update(
+            db,
+            inbound_message,
+            intent=intent_str,
+            status=inbound_status,
+            failure_reason=send_error or build_error or classification_error,
+            total_latency_ms=total_latency_ms,
+            metadata_json={
+                "queue_delay_ms": queue_delay_ms,
+                "classification_latency_ms": classification_latency_ms,
+                "response_build_latency_ms": build_latency_ms,
+                "upstream_api_latency_ms": upstream_api_latency_ms,
+                "send_latency_ms": send_latency_ms,
+                "api_calls": api_metrics,
+            },
+        )
 
         if db and conv_for_log:
             try:
-                log_message(db, conv_for_log, "outbound", reply_text, intent=intent_str)
+                log_message(
+                    db,
+                    conv_for_log,
+                    "outbound",
+                    reply_text,
+                    intent=intent_str,
+                    twilio_message_sid=outbound_sid,
+                    status="sent" if not send_error else "send_failed",
+                    failure_reason=send_error,
+                    correlation_id=correlation_id,
+                    metadata_json={
+                        "send_latency_ms": send_latency_ms,
+                        "upstream_api_latency_ms": upstream_api_latency_ms,
+                    },
+                    total_latency_ms=send_latency_ms,
+                )
             except Exception as exc:
                 logger.warning("Database logging (outbound) failed: %s", exc, exc_info=True)
                 db.rollback()
+
+        logger.info(
+            "message_flow_done correlation_id=%s inbound_sid=%s outbound_sid=%s intent=%s queue_delay_ms=%s classify_ms=%s build_ms=%s upstream_api_ms=%s send_ms=%s total_ms=%s api_call_count=%s status=%s",
+            correlation_id,
+            inbound_message_sid or "",
+            outbound_sid or "",
+            intent_str,
+            queue_delay_ms,
+            classification_latency_ms,
+            build_latency_ms,
+            upstream_api_latency_ms,
+            send_latency_ms,
+            total_latency_ms,
+            len(api_metrics),
+            inbound_status,
+        )
     finally:
         if db:
             db.close()
@@ -260,8 +477,34 @@ async def root():
     }
 
 
+@app.get("/health")
+async def health():
+    snapshot = _readiness_snapshot()
+    return {
+        "status": "ok",
+        "environment": snapshot["environment"],
+        "signature_validation": snapshot["signature_validation"],
+        "database": snapshot["database"],
+    }
+
+
+@app.get("/ready")
+async def ready():
+    snapshot = _readiness_snapshot()
+    status_code = 200 if snapshot["ready"] else 503
+    return JSONResponse(status_code=status_code, content=snapshot)
+
+
+@app.get("/health/db")
+async def health_db():
+    snapshot = _database_snapshot()
+    status_code = 200 if snapshot.get("healthy") or not snapshot.get("enabled") else 503
+    return JSONResponse(status_code=status_code, content=snapshot)
+
+
 @app.post("/webhook")
 async def webhook(request: Request, background_tasks: BackgroundTasks):
+    webhook_started = time.monotonic()
     form_data = await request.form()
     body_text = form_data.get("Body", "").strip()
     sender_phone = form_data.get("From", "")
@@ -271,18 +514,52 @@ async def webhook(request: Request, background_tasks: BackgroundTasks):
         profile_name = None
     signature = request.headers.get("X-Twilio-Signature", "")
     url = str(request.url)
+    inbound_message_sid = form_data.get("MessageSid") or form_data.get("SmsSid")
+    correlation_id = inbound_message_sid or uuid.uuid4().hex[:12]
+    twilio_identifiers = {
+        key: value
+        for key in ("MessageSid", "SmsSid", "WaId", "AccountSid")
+        if (value := form_data.get(key))
+    }
 
-    if os.getenv("ENV") == "production":
+    if _signature_validation_enabled():
+        auth_token = os.getenv("TWILIO_AUTH_TOKEN")
+        if not auth_token:
+            logger.warning(
+                "Twilio signature validation misconfigured correlation_id=%s: missing TWILIO_AUTH_TOKEN",
+                correlation_id,
+            )
+            return JSONResponse(
+                status_code=503,
+                content={"error": "Webhook signature validation is misconfigured"},
+            )
         if url.startswith("http://"):
             url = url.replace("http://", "https://", 1)
-        validator = RequestValidator(os.getenv("TWILIO_AUTH_TOKEN"))
+        validator = RequestValidator(auth_token)
         if not validator.validate(url, dict(form_data), signature):
-            logger.warning("Invalid Twilio Signature dropped.")
+            logger.warning("Invalid Twilio Signature dropped. correlation_id=%s", correlation_id)
             return JSONResponse(status_code=403, content={"error": "Invalid signature"})
 
-    background_tasks.add_task(process_message_background, body_text, sender_phone, profile_name)
+    background_tasks.add_task(
+        process_message_background,
+        body_text,
+        sender_phone,
+        profile_name,
+        inbound_message_sid=inbound_message_sid,
+        twilio_identifiers=twilio_identifiers,
+        webhook_received_at=webhook_started,
+        correlation_id=correlation_id,
+    )
 
-    return JSONResponse(status_code=200, content={"status": "accepted"})
+    ack_elapsed_ms = int((time.monotonic() - webhook_started) * 1000)
+    logger.info(
+        "webhook_accepted correlation_id=%s inbound_sid=%s sender=%s ack_ms=%s",
+        correlation_id,
+        inbound_message_sid or "",
+        sender_phone,
+        ack_elapsed_ms,
+    )
+    return JSONResponse(status_code=200, content={"status": "accepted", "correlation_id": correlation_id})
 
 if __name__ == "__main__":
     import uvicorn

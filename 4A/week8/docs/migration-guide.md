@@ -27,7 +27,7 @@ Content-Type: application/json
 ### 🔹 After (Week 8 - Twilio WhatsApp Format)
 
 ```http
-POST /v2/webhook/whatsapp
+POST /webhook
 Content-Type: application/x-www-form-urlencoded
 
 MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileName=Devotee
@@ -42,7 +42,8 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
   * `From` → WhatsApp user number
   * `Body` → message content
   * `ProfileName` → sender name
-* Endpoint updated to `/v2/webhook/whatsapp`
+* Endpoint updated to `/webhook`
+* `main.py` acknowledges the webhook immediately and completes classification, response building, and outbound send in a background task
 
 ---
 
@@ -58,18 +59,19 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 
 ---
 
-### 🔹 After (Week 8 - Twilio TwiML)
+### 🔹 After (Week 8 - Immediate JSON Ack + Background Send)
 
-```xml
-<Response>
-    <Message>Temple is open from 6 AM to 8 PM</Message>
-</Response>
+```json
+{
+  "status": "accepted",
+  "correlation_id": "SM67890"
+}
 ```
 
 ### ✅ Key Changes
 
-* Response format changed to **TwiML (XML)**
-* Required for Twilio WhatsApp replies
+* Webhook response changed to **JSON acknowledgment**
+* The user-facing WhatsApp reply is sent asynchronously through the Twilio REST API
 
 ---
 
@@ -109,7 +111,7 @@ MessageSid=SM67890&From=whatsapp%3A%2B19725550123&Body=Temple+timings&ProfileNam
 | TWILIO_ACCOUNT_SID  | N/A    | Required             | Twilio account ID       |
 | TWILIO_AUTH_TOKEN   | N/A    | Required             | Twilio auth token       |
 | TWILIO_PHONE_NUMBER | N/A    | Required             | WhatsApp sender number  |
-| WEBHOOK_URL         | basic  | /v2/webhook/whatsapp | Updated endpoint        |
+| WEBHOOK_URL         | basic  | /webhook             | Updated endpoint        |
 
 ---
 
@@ -197,7 +199,7 @@ In case the backend API or database is unavailable, the bot maintains availabili
 
 ## 🔌 Circuit Breaking
 
-* `api_client.py` uses a **30-second timeout**
+* `api_client.py` uses split upstream timeouts (short connect timeout + bounded read timeout)
 * Raises `APIConnectionError` if backend fails
 
 ---
@@ -232,7 +234,7 @@ If search fails:
 
 ## ❤️ Health Monitoring
 
-* `/health` endpoint exposed
+* `/health`, `/ready`, and `/health/db` endpoints exposed
 * Enables uptime tracking independent of backend
 
 ---

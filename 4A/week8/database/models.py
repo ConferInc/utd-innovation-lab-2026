@@ -7,7 +7,9 @@ When DATABASE_URL is unset, no engine is created — DB logging is skipped (loca
 from __future__ import annotations
 
 import os
-from sqlalchemy import MetaData, create_engine
+from typing import Any, Dict, List
+
+from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 
 # ---------------------------------------------------------------------------
@@ -72,3 +74,89 @@ if DATABASE_URL:
             pool_use_lifo=True,
         )
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+
+def _message_column_ddl() -> Dict[str, str]:
+    if engine is None:
+        return {}
+    dialect = engine.dialect.name
+    json_type = "JSONB" if dialect == "postgresql" else "TEXT"
+    return {
+        "twilio_message_sid": "VARCHAR(255)",
+        "status": "VARCHAR(64)",
+        "failure_reason": "TEXT",
+        "correlation_id": "VARCHAR(64)",
+        "metadata_json": json_type,
+        "total_latency_ms": "INTEGER",
+    }
+
+
+def _ensure_message_table_columns() -> List[str]:
+    if engine is None:
+        return []
+
+    inspector = inspect(engine)
+    if "messages" not in inspector.get_table_names():
+        return []
+
+    existing_columns = {column["name"] for column in inspector.get_columns("messages")}
+    added_columns: List[str] = []
+    column_ddl = _message_column_ddl()
+
+    with engine.begin() as connection:
+        for column_name, ddl in column_ddl.items():
+            if column_name in existing_columns:
+                continue
+            connection.execute(
+                text(f"ALTER TABLE messages ADD COLUMN {column_name} {ddl}")
+            )
+            added_columns.append(column_name)
+    return added_columns
+
+
+def init_database() -> Dict[str, Any]:
+    if engine is None:
+        return {
+            "enabled": False,
+            "healthy": False,
+            "status": "disabled",
+            "reason": "DATABASE_URL not set",
+            "columns_added": [],
+        }
+
+    from . import schema_chat  # noqa: F401 - ensure ORM models are registered
+
+    Base.metadata.create_all(bind=engine)
+    columns_added = _ensure_message_table_columns()
+    return {
+        "enabled": True,
+        "healthy": True,
+        "status": "ready",
+        "columns_added": columns_added,
+    }
+
+
+def check_database_health() -> Dict[str, Any]:
+    if engine is None:
+        return {
+            "enabled": False,
+            "healthy": False,
+            "status": "disabled",
+            "reason": "DATABASE_URL not set",
+        }
+
+    try:
+        with engine.connect() as connection:
+            connection.execute(text("SELECT 1"))
+        return {
+            "enabled": True,
+            "healthy": True,
+            "status": "ok",
+        }
+    except Exception as exc:
+        return {
+            "enabled": True,
+            "healthy": False,
+            "status": "error",
+            "reason": str(exc),
+        }

@@ -459,16 +459,27 @@ CLARIFY_THRESHOLD = 0.60
 
 def classify(message: str) -> Dict:
     entities = extract_entities(message)
+    local_result = _classify_with_jaccard(message, entities)
 
-    # LLM tier 1: Gemini (best when not 429'd).
-    ai_result = _classify_with_gemini(message)
-
-    used_jaccard = False
-    if not ai_result or ai_result["confidence"] < CLARIFY_THRESHOLD:
-        result = _classify_with_jaccard(message, entities)
+    # Week 13 improvement: obvious local/entity-backed routes should not pay
+    # Gemini latency. If the deterministic classifier found real signal, trust
+    # it first and reserve LLM calls for the genuinely ambiguous/no-signal
+    # branch.
+    if (
+        local_result.get("intent") != "ambiguous"
+        and local_result.get("has_signal", True)
+    ):
+        result = local_result
         used_jaccard = True
     else:
-        result = ai_result
+        # LLM tier 1: Gemini, but only for messages local rules could not route.
+        ai_result = _classify_with_gemini(message)
+        if ai_result and ai_result["confidence"] >= CLARIFY_THRESHOLD:
+            result = ai_result
+            used_jaccard = False
+        else:
+            result = local_result
+            used_jaccard = True
 
     # LLM tier 2: Ollama Cloud — only as a *tie-breaker* when Gemini didn't
     # answer AND our Jaccard heuristic produced no clear signal (the

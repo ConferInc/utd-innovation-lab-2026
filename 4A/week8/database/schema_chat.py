@@ -10,7 +10,7 @@ import json
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, Text, types
+from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Text, types
 from sqlalchemy.orm import relationship
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 
@@ -116,6 +116,12 @@ class Message(Base):
     direction = Column(String, nullable=False)
     text = Column(Text, nullable=False)
     intent = Column(String, nullable=True)
+    twilio_message_sid = Column(String, nullable=True)
+    status = Column(String, nullable=True)
+    failure_reason = Column(Text, nullable=True)
+    correlation_id = Column(String, nullable=True)
+    metadata_json = Column(PortableJSON(), default=dict, nullable=False)
+    total_latency_ms = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=_now, nullable=False)
 
     conversation = relationship("Conversation", back_populates="messages")

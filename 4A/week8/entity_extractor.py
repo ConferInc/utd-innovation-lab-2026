@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timedelta
-from typing import Dict
+from typing import Dict, Optional
 
 TIMEFRAMES = {
     "today": ["today", "tonight"],
@@ -10,7 +10,7 @@ TIMEFRAMES = {
     "friday_evening": ["friday evening"]
 }
 
-EVENT_NAMES = [
+EVENT_ALIAS_SEEDS = [
     "Lohri", "Sakranti", "Sanskriti", "Mahashivratri", "Holi", "Ram Navami", 
     "Youth Leadership Workshop", "Dallas Yoga Fest", "JKYog Spiritual Retreat and Family Camp", 
     "Guru Poornima", "LTP with Swami Mukudananda", "Dallas Retreat", "Janmashtami", 
@@ -20,6 +20,29 @@ EVENT_NAMES = [
 PROGRAM_NAMES = [
     "Satsang", "Abhishek", "Sunderkand", "Mata Ki Chowki", "Aarti", "Kirtan", "Chalisa"
 ]
+
+TARGETED_EVENT_PATTERNS = (
+    r"(?:tell me about|what is|what's|when is|where is|where's|details for|info(?:rmation)? about|parking for|directions for|how do i get to|sponsorship(?: tiers)? for)\s+(?P<target>.+)",
+)
+
+TARGET_STOPWORDS = {
+    "a", "an", "about", "address", "at", "by", "details", "did", "do",
+    "does", "event", "events", "for", "get", "held", "how", "i", "info",
+    "information", "is", "location", "map", "me", "more", "parking",
+    "park", "please", "program", "programs", "route", "show", "sponsor",
+    "sponsorship", "tell", "the", "tiers", "to", "what", "when", "where",
+}
+
+EVENT_HINT_KEYWORDS = {
+    "camp", "celebration", "festival", "jayanti", "ltp", "navami",
+    "poornima", "retreat", "shivir", "workshop", "yatra",
+}
+EVENT_HINT_PHRASES = {
+    "life transformation",
+}
+
+SEEDED_EVENT_NAMES = {name.lower() for name in EVENT_ALIAS_SEEDS}
+PROGRAM_NAME_LOOKUP = {name.lower(): name for name in PROGRAM_NAMES}
 
 def _extract_date_regex(text: str) -> str | None:
     text_lower = text.lower()
@@ -41,6 +64,64 @@ def _extract_date_regex(text: str) -> str | None:
             return f"{year}-{month_num:02d}-{day:02d}"
     return None
 
+
+def _clean_candidate_phrase(text: str) -> str:
+    normalized = re.sub(r"[^\w\s&'-]", " ", text).strip()
+    tokens = [token for token in normalized.split() if token]
+    kept = [token for token in tokens if token.lower() not in TARGET_STOPWORDS]
+    return " ".join(kept).strip()
+
+
+def _looks_like_event_candidate(candidate: str) -> bool:
+    if not candidate:
+        return False
+    lowered = candidate.lower()
+    tokens = lowered.split()
+    if lowered in SEEDED_EVENT_NAMES:
+        return True
+    if len(tokens) >= 2:
+        return True
+    return any(keyword in lowered for keyword in EVENT_HINT_KEYWORDS)
+
+
+def _has_specific_event_signal(raw_text: str, cleaned_candidate: str) -> bool:
+    lowered = cleaned_candidate.lower()
+    tokens = set(lowered.split())
+    if lowered in SEEDED_EVENT_NAMES:
+        return True
+    if tokens & EVENT_HINT_KEYWORDS:
+        return True
+    if any(phrase in lowered for phrase in EVENT_HINT_PHRASES):
+        return True
+    return False
+
+
+def _match_program_name(candidate: str) -> Optional[str]:
+    lowered = candidate.lower()
+    for program in PROGRAM_NAMES:
+        if program.lower() in lowered.split():
+            return program
+    return None
+
+
+def _extract_dynamic_event_candidate(message: str) -> Optional[str]:
+    message = (message or "").strip()
+    if not message:
+        return None
+
+    for pattern in TARGETED_EVENT_PATTERNS:
+        match = re.search(pattern, message, flags=re.IGNORECASE)
+        if not match:
+            continue
+        candidate = _clean_candidate_phrase(match.group("target"))
+        if _looks_like_event_candidate(candidate) and _has_specific_event_signal(match.group("target"), candidate):
+            return candidate
+
+    fallback = _clean_candidate_phrase(message)
+    if _looks_like_event_candidate(fallback) and _has_specific_event_signal(message, fallback):
+        return fallback
+    return None
+
 def extract_entities(message: str) -> Dict:
     msg = message.lower()
     entities = {"timeframe": None, "event_name": None, "program_name": None, "parsed_date": None}
@@ -50,7 +131,7 @@ def extract_entities(message: str) -> Dict:
             entities["timeframe"] = key
             break
             
-    for event in EVENT_NAMES:
+    for event in EVENT_ALIAS_SEEDS:
         if event.lower() in msg: 
             entities["event_name"] = event
             break
@@ -59,6 +140,17 @@ def extract_entities(message: str) -> Dict:
         if program.lower() in msg: 
             entities["program_name"] = program
             break
+
+    if not entities["event_name"]:
+        dynamic_event = _extract_dynamic_event_candidate(message)
+        if dynamic_event:
+            matched_program = _match_program_name(dynamic_event)
+            if matched_program and not _has_specific_event_signal(message, dynamic_event):
+                entities["program_name"] = entities["program_name"] or matched_program
+            elif dynamic_event.lower() not in PROGRAM_NAME_LOOKUP:
+                entities["event_name"] = dynamic_event
+            elif not entities["program_name"]:
+                entities["program_name"] = PROGRAM_NAME_LOOKUP[dynamic_event.lower()]
 
     entities["parsed_date"] = _extract_date_regex(message)
     if not entities["timeframe"] and entities["parsed_date"]:

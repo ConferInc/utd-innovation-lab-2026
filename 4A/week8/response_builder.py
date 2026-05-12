@@ -139,7 +139,7 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             # Week 12 fix (Bug 2): use raw-message fallback so "Tell me about
             # the Bhakti Kirtan Retreat" reaches /search even when the entity
             # extractor's hardcoded EVENT_NAMES list misses it.
-            search_term = _search_term_with_message_fallback(query, classified_intent, session_context)
+            search_term = _resolve_targeted_search_term(query, classified_intent, session_context)
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
                 return _format_no_results(search_term or "your request")
@@ -148,7 +148,7 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
         if intent in {"sponsorship", "sponsorship_tiers"}:
             # Week 12 fix (Bug 3): if no event target was extracted, return a
             # generic donation / seva message instead of "no matching events".
-            search_term = _search_term_with_message_fallback(query, classified_intent, session_context)
+            search_term = _resolve_targeted_search_term(query, classified_intent, session_context)
             if not search_term and event_id is None:
                 return _truncate_whatsapp(_format_generic_sponsorship())
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
@@ -166,7 +166,7 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             if event_id is None and _is_venue_question(session_context):
                 return _truncate_whatsapp(_format_temple_info())
 
-            search_term = _search_term_with_message_fallback(query, classified_intent, session_context)
+            search_term = _resolve_targeted_search_term(query, classified_intent, session_context)
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
                 # No specific event resolved — fall back to temple-info,
@@ -200,18 +200,32 @@ def _get_api_client(session_context: Mapping[str, Any]) -> EventAPIClient:
     existing = session_context.get("api_client")
     if isinstance(existing, EventAPIClient):
         return existing
+    if existing is not None and all(
+        callable(getattr(existing, method_name, None))
+        for method_name in ("get_events", "get_today", "search_events", "get_recurring", "get_event_by_id")
+    ):
+        return existing
 
     base_url = session_context.get("api_base_url")
     bearer_token = session_context.get("api_bearer_token")
     headers = session_context.get("api_headers")
 
+    default_config = APIConfig()
     config = APIConfig(
-        base_url=base_url or APIConfig().base_url,
-        events_base_path=APIConfig().events_base_path,
-        timeout_seconds=APIConfig().timeout_seconds,
-        bearer_token=bearer_token or APIConfig().bearer_token,
+        base_url=base_url or default_config.base_url,
+        events_base_path=default_config.events_base_path,
+        connect_timeout_seconds=default_config.connect_timeout_seconds,
+        read_timeout_seconds=default_config.read_timeout_seconds,
+        write_timeout_seconds=default_config.write_timeout_seconds,
+        pool_timeout_seconds=default_config.pool_timeout_seconds,
+        bearer_token=bearer_token or default_config.bearer_token,
     )
-    return EventAPIClient(config=config, headers=headers)
+    observer = session_context.get("api_observer")
+    return EventAPIClient(
+        config=config,
+        headers=headers,
+        observer=observer if callable(observer) else None,
+    )
 
 
 def _resolve_intent(classified_intent: Mapping[str, Any]) -> str:
@@ -235,6 +249,7 @@ def _resolve_intent(classified_intent: Mapping[str, Any]) -> str:
         "event_detail": "single_event_detail",
         "single_event_detail": "single_event_detail",
         "single_event": "single_event_detail",
+        "event_specific": "single_event_detail",
         "details": "single_event_detail",
         "event_search": "event_search",
         "search": "event_search",
@@ -293,26 +308,26 @@ def _resolve_query(classified_intent: Mapping[str, Any], session_context: Mappin
     return None
 
 
-def _search_term_with_message_fallback(
+def _resolve_targeted_search_term(
     query: Optional[str],
     classified_intent: Mapping[str, Any],
     session_context: Mapping[str, Any],
 ) -> Optional[str]:
-    """Return a search term, falling back to noun-phrase extraction from the
-    raw user message when the structured query is empty.
+    """Return the best search term for a target-bearing request.
 
     This is for intents that *require* a target (event_specific, logistics,
-    sponsorship of a specific event). It strips common question / filler
-    words so that "Where is the Bhakti Kirtan Retreat?" becomes
-    "Bhakti Kirtan Retreat" and reaches the search endpoint.
+    sponsorship of a specific event). The entity extractor's static program
+    aliases can sometimes collapse a live title like "Bhakti Kirtan Retreat"
+    down to just "Kirtan". When the cleaned raw user message is clearly more
+    specific, prefer that over the shorter structured query.
     """
-    if query:
-        return query
     raw = session_context.get("user_message")
-    if not raw:
-        return None
-    cleaned = _strip_question_words(str(raw))
-    return cleaned or None
+    cleaned = _strip_question_words(str(raw)) if raw else ""
+    if not query:
+        return cleaned or None
+    if cleaned and _is_more_specific_search_candidate(cleaned, query):
+        return cleaned
+    return query or cleaned or None
 
 
 _QUESTION_WORDS = {
@@ -323,6 +338,9 @@ _QUESTION_WORDS = {
     "about", "tell", "me", "more", "info", "details", "please",
     # Common starters / fillers
     "hi", "hello", "hey", "i", "id", "i'd", "want", "need", "looking", "find",
+    "held", "hosted", "parking", "logistics", "travel", "transportation",
+    "sponsor", "sponsorship", "tiers", "tier", "donate", "donation",
+    "seva", "options", "there", "get",
     # Bugfix (post-Week-12 audit, B19 case): "Where is the temple?" used to
     # leak through with a residual "temple" search term and returned the
     # first event in the API. The temple itself is a venue, not an event —
@@ -343,6 +361,18 @@ def _strip_question_words(text: str) -> str:
     if len(cleaned) < 2:
         return ""
     return cleaned
+
+
+def _is_more_specific_search_candidate(candidate: str, current_query: str) -> bool:
+    candidate_tokens = candidate.lower().split()
+    query_tokens = current_query.lower().split()
+    if not candidate_tokens or not query_tokens:
+        return False
+    if len(candidate_tokens) <= len(query_tokens):
+        return False
+    query_token_set = set(query_tokens)
+    candidate_token_set = set(candidate_tokens)
+    return query_token_set.issubset(candidate_token_set)
 
 
 def _resolve_event_id(classified_intent: Mapping[str, Any], session_context: Mapping[str, Any]) -> Optional[int]:

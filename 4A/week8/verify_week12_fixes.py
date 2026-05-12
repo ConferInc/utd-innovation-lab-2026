@@ -177,22 +177,25 @@ def build_cases() -> List[Case]:
         Case(
             "event_holi",
             "Tell me about the Holi celebration",
-            expect_intent_in=["event_specific", "single_event_detail", "discovery", "event_list", "event_search"],
+            expect_intent_in=["event_specific", "single_event_detail", "event_search"],
             must_contain=[holi_name.split()[0]],  # at least the first word "Holi"
-            must_not_contain=["I ran into an issue"],
+            must_not_contain=["I ran into an issue", "*upcoming events*"],
         ),
         Case(
             "event_kirtan_retreat",
             "Tell me about the Bhakti Kirtan Retreat",
-            expect_intent_in=["event_specific", "single_event_detail", "logistics", "discovery", "event_list", "event_search"],
+            expect_intent_in=["event_specific", "single_event_detail", "event_search"],
             # The bot should pull a relevant event via search rather than say "no match"
-            must_not_contain=["could not find any matching events for *Bhakti Kirtan Retreat*"],
+            must_not_contain=[
+                "could not find any matching events for *Bhakti Kirtan Retreat*",
+                "*upcoming events*",
+            ],
         ),
         Case(
             "event_ltp",
             "What is the Life Transformation Program?",
-            expect_intent_in=["event_specific", "discovery", "event_list", "single_event_detail", "event_search"],
-            must_not_contain=["I ran into an issue"],
+            expect_intent_in=["event_specific", "single_event_detail", "event_search"],
+            must_not_contain=["I ran into an issue", "*upcoming events*"],
         ),
     ]
 
@@ -237,8 +240,8 @@ def build_cases() -> List[Case]:
         Case(
             "logistics_holi_where",
             "Where is the Holi celebration held?",
-            expect_intent_in=["logistics", "event_specific", "single_event_detail", "discovery", "event_list", "event_search"],
-            must_not_contain=["I ran into an issue"],
+            expect_intent_in=["logistics", "event_specific", "single_event_detail", "event_search"],
+            must_not_contain=["I ran into an issue", "*upcoming events*"],
         ),
         Case(
             "logistics_parking",
@@ -250,7 +253,7 @@ def build_cases() -> List[Case]:
             "logistics_kirtan_directions",
             "How do I get to the Bhakti Kirtan Retreat?",
             expect_intent_in=["logistics", "event_specific", "single_event_detail", "event_search"],
-            must_not_contain=["I ran into an issue"],
+            must_not_contain=["I ran into an issue", "*upcoming events*"],
         ),
     ]
 

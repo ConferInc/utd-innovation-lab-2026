@@ -103,7 +103,7 @@ WhatsApp Bot
 ## ⚠️ Tech Debt Resolution
 
 ### Issues Identified
-- TwiML vs JSON inconsistency  
+- Webhook acknowledgment vs outbound-send inconsistency  
 - API version mismatch (`/events` vs `/v2/events`)  
 - Authentication ambiguity  
 - Schema mismatch between data and backend  
@@ -309,12 +309,13 @@ GET /api/v2/events/today
 - JSON payloads
 
 ### External Communication
-- JSON → TwiML via main.py
+- Twilio webhook → immediate JSON acknowledgment
+- Outbound WhatsApp message → Twilio REST API send from `main.py`
 
 ### Final Flow
 
 ```text
-Internal Services → JSON → Response Builder → main.py → TwiML → WhatsApp
+Twilio Webhook → `main.py` JSON ack → background classify/build/send → Twilio REST API → WhatsApp
 ```
 
 ---
@@ -332,7 +333,7 @@ Internal Services → JSON → Response Builder → main.py → TwiML → WhatsA
 Overrides:
 - System reliability  
 - Error handling  
-- TwiML vs JSON architecture  
+- Webhook acknowledgment and delivery architecture  
 
 Ensures consistency across:
 - API contract  
