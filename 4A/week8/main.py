@@ -22,6 +22,11 @@ from database import (
     normalize_twilio_phone,
     update_message,
 )
+from conversational_reply import (
+    build_clarification_context_block,
+    build_conversational_clarification_reply,
+    conversational_providers_configured,
+)
 from intent_classifier import classify, warm_up as _warm_up_gemini
 from response_builder import build_response
 
@@ -398,6 +403,18 @@ def process_message_background(
         # call build_response — go straight to the clarification prompt.
         if intent_str in ("clarification_needed", "ambiguous", "unknown"):
             reply_text = _build_clarification_reply()
+            if (
+                os.getenv("ENABLE_CONVERSATIONAL_FALLBACK") == "1"
+                and conversational_providers_configured()
+            ):
+                generated = build_conversational_clarification_reply(
+                    body_text,
+                    intent_str,
+                    raw_classification.get("confidence"),
+                    build_clarification_context_block(),
+                )
+                if generated and generated.strip():
+                    reply_text = generated.strip()
         else:
             build_started = time.monotonic()
             try:
