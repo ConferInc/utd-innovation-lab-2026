@@ -1,4 +1,13 @@
-from response_builder import build_response
+from datetime import date, datetime
+from unittest.mock import patch
+
+from entity_extractor import extract_entities
+from response_builder import (
+    _date_range_for_timeframe,
+    _format_event_list,
+    _format_timeframe_heading,
+    build_response,
+)
 
 
 class StubEventAPIClient:
@@ -88,3 +97,63 @@ def test_event_specific_no_results_does_not_fall_back_to_generic_upcoming_list()
     assert client.search_queries == ["hanuman jayanti"]
     assert "could not find any matching events" in reply.lower()
     assert "*upcoming events*" not in reply.lower()
+
+
+def test_extract_entities_next_weekend_before_next_week():
+    assert extract_entities("what is next weekend")["timeframe"] == "next_weekend"
+    assert extract_entities("events next week")["timeframe"] == "next_week"
+
+
+def test_date_range_tomorrow_and_next_weekend_ct():
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("America/Chicago")
+    wed = datetime(2026, 5, 13, 12, 0, 0, tzinfo=tz)
+    with patch("response_builder._now_ct", return_value=wed):
+        assert _date_range_for_timeframe("tomorrow") == (date(2026, 5, 14), date(2026, 5, 14))
+        assert _date_range_for_timeframe("next_weekend") == (date(2026, 5, 23), date(2026, 5, 24))
+        assert _format_timeframe_heading("next_weekend") == "next weekend"
+
+    sat = datetime(2026, 5, 16, 10, 0, 0, tzinfo=tz)
+    with patch("response_builder._now_ct", return_value=sat):
+        assert _date_range_for_timeframe("next_weekend") == (date(2026, 5, 23), date(2026, 5, 24))
+
+
+def test_format_event_list_footer_uses_dynamic_range():
+    events = [
+        {
+            "name": "Alpha",
+            "start_datetime": "2030-01-01T10:00:00",
+            "end_datetime": "2030-01-01T12:00:00",
+            "location_name": "Hall",
+        },
+        {
+            "name": "Beta",
+            "start_datetime": "2030-01-02T10:00:00",
+            "end_datetime": "2030-01-02T12:00:00",
+            "location_name": "Hall",
+        },
+    ]
+    text = _format_event_list(events, "next weekend")
+    assert "1-2 for full details" in text
+    assert "1, 2, or 3" not in text
+
+
+def test_format_temple_info_mentions_on_site_parking():
+    from response_builder import _format_temple_info
+
+    assert "on-site parking" in _format_temple_info().lower()
+
+
+def test_format_event_list_footer_single_row():
+    events = [
+        {
+            "name": "Only",
+            "start_datetime": "2030-01-01T10:00:00",
+            "end_datetime": "2030-01-01T12:00:00",
+            "location_name": "Hall",
+        },
+    ]
+    text = _format_event_list(events, "tomorrow")
+    assert "1 for full details" in text
+    assert "1-1" not in text

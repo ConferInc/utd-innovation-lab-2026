@@ -1,5 +1,6 @@
 import logging
 import os
+import re
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -139,6 +140,24 @@ def _persist_message_update(db, message, **kwargs) -> None:
     except Exception as exc:
         logger.warning("Database message update failed: %s", exc, exc_info=True)
         db.rollback()
+
+
+_LIST_SELECTION_PATTERNS = (
+    re.compile(r"(?:register|sign\s*up)\s+for\s+(\d+)", re.I),
+    re.compile(r"(?:detail|details|info|information|more)\s+(?:on|about|for)\s+(\d+)", re.I),
+    re.compile(r"#\s*(\d+)\b"),
+    re.compile(r"\b(?:option|choice|event)\s*#?\s*(\d+)\b", re.I),
+)
+
+
+def _extract_shown_list_index_1based(body_text: str) -> Optional[int]:
+    """1-based row index from phrases like 'register for 1' or '#2', or None."""
+    t = body_text.strip()
+    for rx in _LIST_SELECTION_PATTERNS:
+        m = rx.search(t)
+        if m:
+            return int(m.group(1))
+    return None
 
 
 def _build_clarification_reply() -> str:
@@ -317,27 +336,41 @@ def process_message_background(
             session_data["selected_event_id"] = None
 
         # Bugfix (post-Week 12 audit): support bare numeric replies like "2" as a
-        # follow-up to a previously shown event list. The list response says
-        # "Reply with: 1, 2, or 3 for full details" — if the previous turn pushed
-        # 5 events into session.last_shown_event_ids, "2" should resolve to the
-        # second of those event IDs and re-enter build_response with intent
-        # event_detail. Done here in main.py so the classifier doesn't have to
-        # learn list-position grammar.
+        # follow-up to a previously shown event list. The list footer says
+        # "1-n for full details" — if the previous turn pushed five IDs into
+        # session.last_shown_event_ids, "2" (or "register for 2") should resolve
+        # to the second ID. Done here so the classifier does not need list
+        # grammar. List-index resolution runs after the selected_event_id clear
+        # above so long polite sentences still clear stale picks, then repopulate
+        # from the list when a row index is detected.
         stripped = body_text.strip()
+        prev_ids = session_data.get("last_shown_event_ids") or []
+        selected_id_override: Optional[int] = None
         if stripped.isdigit():
             idx = int(stripped) - 1
-            prev_ids = session_data.get("last_shown_event_ids") or []
             if 0 <= idx < len(prev_ids):
                 selected_id_override = prev_ids[idx]
-                logger.info("NUMBERED FOLLOW-UP correlation_id=%s '%s' -> event_id=%s", correlation_id, stripped, selected_id_override)
-                raw_classification = {
-                    "intent": "single_event_detail",
-                    "confidence": 1.0,
-                    "entities": {},
-                    "event_id": selected_id_override,
-                }
-                session_data["last_intent"] = "single_event_detail"
-                session_data["selected_event_id"] = selected_id_override
+        elif prev_ids:
+            pick = _extract_shown_list_index_1based(body_text)
+            if pick is not None:
+                idx = pick - 1
+                if 0 <= idx < len(prev_ids):
+                    selected_id_override = prev_ids[idx]
+        if selected_id_override is not None:
+            logger.info(
+                "NUMBERED FOLLOW-UP correlation_id=%s body=%r -> event_id=%s",
+                correlation_id,
+                body_text,
+                selected_id_override,
+            )
+            raw_classification = {
+                "intent": "single_event_detail",
+                "confidence": 1.0,
+                "entities": {},
+                "event_id": selected_id_override,
+            }
+            session_data["last_intent"] = "single_event_detail"
+            session_data["selected_event_id"] = selected_id_override
 
         context = {
             "phone_number": sender_phone,

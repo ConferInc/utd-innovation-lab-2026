@@ -558,8 +558,9 @@ def _filter_upcoming(events: Sequence[Mapping[str, Any]]) -> List[Dict[str, Any]
 def _resolve_timeframe(classified_intent: Mapping[str, Any]) -> Optional[str]:
     """Pull a timeframe label out of the classifier's entities.
 
-    Accepts either a known label (today/tomorrow/this_weekend/this_week) or
-    an ISO date string (the entity extractor's `parsed_date`).
+    Accepts either a known label (today/tomorrow/this_weekend/next_weekend/
+    this_week/next_week) or an ISO date string (the entity extractor's
+    ``parsed_date``).
     """
     entities = classified_intent.get("entities") or {}
     if not isinstance(entities, Mapping):
@@ -585,6 +586,8 @@ def _format_timeframe_heading(timeframe: Optional[str]) -> Optional[str]:
         return "tomorrow"
     if timeframe == "this_weekend":
         return "this weekend"
+    if timeframe == "next_weekend":
+        return "next weekend"
     if timeframe == "this_week":
         return "this week"
     if timeframe == "next_week":
@@ -596,6 +599,22 @@ def _format_timeframe_heading(timeframe: Optional[str]) -> Optional[str]:
         return d.strftime("%b %d").replace(" 0", " ")
     except (TypeError, ValueError):
         return None
+
+
+def _calendar_weekend_sat_sun(today: date) -> Tuple[date, date]:
+    """The Saturday–Sunday pair for the current/upcoming calendar weekend (CT).
+
+    Used for ``next_weekend`` as the weekend *after* this pair. Differs from
+    ``this_weekend`` filtering when ``today`` is Sunday (that path may clip to
+    Sunday-only for display); here we always anchor on Sat–Sun boundaries.
+    """
+    wd = today.weekday()
+    if wd >= 5:
+        sat = today if wd == 5 else today - timedelta(days=1)
+    else:
+        sat = today + timedelta(days=(5 - wd))
+    sun = sat + timedelta(days=1)
+    return sat, sun
 
 
 def _date_range_for_timeframe(
@@ -611,6 +630,7 @@ def _date_range_for_timeframe(
       - "tonight"             → (today, today)
       - "tomorrow"            → (tomorrow, tomorrow)
       - "this_weekend"        → (next Saturday, next Sunday) (or today/tomorrow if today is already Sat/Sun)
+      - "next_weekend"        → the Saturday–Sunday after the calendar ``this`` weekend
       - "this_week"           → (today, end of this week, Sunday)
       - "next_week"           → (next Monday, next Sunday)
       - "YYYY-MM-DD"          → (that day, that day)
@@ -638,6 +658,9 @@ def _date_range_for_timeframe(
         sat = today + timedelta(days=days_to_sat)
         sun = sat + timedelta(days=1)
         return (sat, sun)
+    if timeframe == "next_weekend":
+        sat0, sun0 = _calendar_weekend_sat_sun(today)
+        return (sat0 + timedelta(days=7), sun0 + timedelta(days=7))
     if timeframe == "this_week":
         # Today through end-of-week (Sunday).
         wd = today.weekday()
@@ -914,10 +937,15 @@ def _format_event_list(events: Sequence[Mapping[str, Any]], query: str) -> str:
         lines.append(f"   {_format_short_date_time(event)}")
         lines.append(f"   {_format_short_location(event)}")
         lines.append("")
+    n = len(events)
+    if n <= 1:
+        detail_line = "- 1 for full details"
+    else:
+        detail_line = f"- 1-{n} for full details"
     lines.extend(
         [
             "Reply with:",
-            "- 1, 2, or 3 for full details",
+            detail_line,
             "- logistics for parking, food, or travel info",
             "- sponsorship for seva or sponsorship options",
         ]
@@ -996,6 +1024,9 @@ def _format_temple_info() -> str:
         "Website: jkyog.org",
         "Donations: jkyog.org/donate",
         "Live stream: jkyog.org/live",
+        "",
+        "🅿️ *Parking*",
+        "On-site parking is available at the temple.",
         "",
         "Ask me about: *upcoming events*, *Sunday Satsang*, "
         "*aarti times*, *donations*, or *parking* for a specific event.",

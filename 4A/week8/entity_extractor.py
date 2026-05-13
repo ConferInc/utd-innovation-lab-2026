@@ -6,8 +6,11 @@ TIMEFRAMES = {
     "today": ["today", "tonight"],
     "tomorrow": ["tomorrow"],
     "this_weekend": ["this weekend"],
+    # Must appear before "next_week": the phrase "next weekend" contains "next week".
+    "next_weekend": ["next weekend"],
     "this_week": ["this week"],
-    "friday_evening": ["friday evening"]
+    "next_week": ["next week"],
+    "friday_evening": ["friday evening"],
 }
 
 EVENT_ALIAS_SEEDS = [
