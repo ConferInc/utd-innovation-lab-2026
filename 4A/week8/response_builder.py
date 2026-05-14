@@ -1,6 +1,7 @@
 """Response builder for Team 4A / Team 4B integration.
 
 build_response(classified_intent: dict, session_context: dict) -> str
+build_response_with_facts(...) -> BuildResult  # draft + JSON facts for grounded LLM rewrite
 - Calls Team 4B event API through api_client.py
 - Formats the response using Week 7 WhatsApp templates
 - Enforces the 4096-character WhatsApp limit
@@ -10,6 +11,7 @@ build_response(classified_intent: dict, session_context: dict) -> str
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 
@@ -64,32 +66,174 @@ MISSING_FIELD_TEXT = "Not listed on the event page"
 DEFAULT_LIST_LIMIT = 5
 DEFAULT_SEARCH_LIMIT = 5
 
+FACTS_VERSION = 1
 
 def build_response(classified_intent: dict, session_context: dict) -> str:
-    """Build the final WhatsApp response for the user.
 
-    Parameters
-    ----------
-    classified_intent:
-        Expected to contain the detected intent and any extracted entities such as
-        query text, event_id, or flags like today/recurring.
+@dataclass(frozen=True)
+class BuildResult:
+    """WhatsApp draft plus optional structured facts for grounded LLM rewrite."""
 
-    session_context:
-        Conversation state such as selected_event_id or an already constructed
-        EventAPIClient under session_context["api_client"].
+    draft: str
+    facts: Optional[Dict[str, Any]]
 
-    Returns
-    -------
-    str
-        WhatsApp-safe response text.
-    """
+
+def _facts_envelope(classifier_intent: str, response_kind: str, data: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "facts_version": FACTS_VERSION,
+        "classifier_intent": classifier_intent,
+        "response_kind": response_kind,
+        "data": dict(data),
+    }
+
+
+def _compact_event_list_row(event: Mapping[str, Any]) -> Dict[str, Any]:
+    return {
+        "id": event.get("id"),
+        "name": event.get("name"),
+        "start_datetime": event.get("start_datetime"),
+        "end_datetime": event.get("end_datetime"),
+        "location_name": event.get("location_name"),
+        "city": event.get("city"),
+        "state": event.get("state"),
+    }
+
+
+def _compact_event_for_facts(event: Mapping[str, Any]) -> Dict[str, Any]:
+    """Subset of API fields used by templates; JSON-serializable scalars/lists only."""
+    keys = (
+        "id",
+        "name",
+        "subtitle",
+        "description",
+        "start_datetime",
+        "end_datetime",
+        "timezone",
+        "location_name",
+        "address",
+        "city",
+        "state",
+        "postal_code",
+        "country",
+        "price",
+        "food_info",
+        "parking_notes",
+        "transportation_notes",
+        "source_url",
+        "registration_status",
+        "registration_required",
+        "registration_url",
+        "contact_email",
+        "contact_phone",
+        "sponsorship_tiers",
+    )
+    out: Dict[str, Any] = {}
+    for k in keys:
+        v = event.get(k)
+        if v is None or v == "":
+            continue
+        out[k] = v
+    return out
+
+
+def _temple_static_data() -> Dict[str, Any]:
+    """Structured mirror of ``_format_temple_info`` (no narrative)."""
+    return {
+        "name": "JKYog Radha Krishna Temple",
+        "address_line1": "1610 W Whitestone Blvd, Suite #100",
+        "address_line2": "Cedar Park, TX 78613, USA",
+        "phone_whatsapp": "+1 (469) 444-7173",
+        "email": "contact@jkyog.org",
+        "daily_darshan_weekdays_ct": "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM",
+        "daily_darshan_weekends_ct": "9:30 AM – 8:30 PM",
+        "daily_programs_ct": [
+            "Bhog: 11:30 AM – 12:00 PM",
+            "Aarti: 12:15 PM – 12:45 PM, 7:00 PM – 7:30 PM",
+            "Bhajans: 6:00 PM – 7:00 PM",
+        ],
+        "sunday_satsang_ct": "10:30 AM – 12:30 PM",
+        "mahaprasad_after_sunday_ct": "12:30 PM – 1:30 PM",
+        "website": "jkyog.org",
+        "donations_url": "jkyog.org/donate",
+        "live_stream_url": "jkyog.org/live",
+        "parking_note": "On-site parking is available at the temple.",
+    }
+
+
+def _generic_sponsorship_data() -> Dict[str, Any]:
+    return {
+        "event_bound": False,
+        "ways_to_contribute": [
+            "General donation: jkyog.org/donate",
+            "Annadaan (food sponsorship)",
+            "Sponsor a deity bhog or aarti",
+            "Festival sponsorship",
+            "Life Transformation Program (LTP) sponsor",
+        ],
+        "note": "For tiers for a specific event, user should name the event.",
+    }
+
+
+def _serialize_dt(value: Any) -> Optional[str]:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    return None
+
+
+def _recurring_facts_payload(program_hint: Optional[str]) -> Dict[str, Any]:
+    """Facts parallel to ``_format_recurring_response`` (local handler only)."""
+    if get_current_schedule is None:
+        return {"source": "handler_unavailable", "program_hint": program_hint}
+    now = datetime.now(_SCHEDULE_TZ) if _SCHEDULE_TZ else datetime.now()
+    snapshot = get_current_schedule(now)
+    out: Dict[str, Any] = {
+        "source": "local_handler",
+        "program_hint": program_hint,
+        "live_now": list(snapshot.get("live") or []),
+        "exception": snapshot.get("exception"),
+    }
+    upcoming_raw = snapshot.get("upcoming") or []
+    upcoming_serialized: List[Dict[str, Any]] = []
+    for item in upcoming_raw:
+        if not isinstance(item, (list, tuple)) or len(item) < 2:
+            continue
+        program, when = item[0], item[1]
+        upcoming_serialized.append(
+            {"program": str(program), "when": _serialize_dt(when) or str(when)}
+        )
+    out["upcoming_within_2h"] = upcoming_serialized
+
+    if program_hint and get_next_occurrence is not None:
+        try:
+            next_occ = get_next_occurrence(program_hint, now)
+        except Exception:
+            next_occ = None
+        if isinstance(next_occ, Mapping):
+            start = next_occ.get("start")
+            end = next_occ.get("end")
+            out["next_occurrence"] = {
+                "day": str(next_occ.get("day")) if next_occ.get("day") is not None else None,
+                "start": _serialize_dt(start),
+                "end": _serialize_dt(end),
+            }
+        else:
+            out["next_occurrence"] = None
+    return out
+
+
+def build_response_with_facts(classified_intent: dict, session_context: dict) -> BuildResult:
+    """Build WhatsApp draft plus structured facts for optional grounded LLM rewrite."""
     classified_intent = classified_intent or {}
     session_context = session_context or {}
+    classifier_intent = str(classified_intent.get("intent") or "").strip() or "unknown"
 
     client = _get_api_client(session_context)
     intent = _resolve_intent(classified_intent)
     event_id = _resolve_event_id(classified_intent, session_context)
     query = _resolve_query(classified_intent, session_context)
+
+    def env(response_kind: str, data: Mapping[str, Any]) -> Dict[str, Any]:
+        return _facts_envelope(classifier_intent, response_kind, data)
 
     try:
         if intent == "recurring_schedule":
@@ -99,14 +243,22 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             # owned by the bot.
             if get_current_schedule is not None:
                 program_hint = _resolve_recurring_program(classified_intent, query)
-                return _truncate_whatsapp(
-                    _format_recurring_response(program_hint=program_hint)
-                )
+                draft = _truncate_whatsapp(_format_recurring_response(program_hint=program_hint))
+                return BuildResult(draft, env("recurring_schedule", _recurring_facts_payload(program_hint)))
             # Fallback only if the local module failed to import.
-            return _build_event_list_response(client, intent="recurring_events", query=query, session_context=session_context)
+            list_draft, list_data = _build_event_list_response(
+                client, intent="recurring_events", query=query, session_context=session_context
+            )
+            rk = "no_results" if not list_data.get("events") else "event_list"
+            list_data["recurring_fallback"] = True
+            return BuildResult(list_draft, env(rk, list_data))
 
         if intent in {"event_list", "event_search", "today_events", "recurring_events"}:
-            return _build_event_list_response(client, intent=intent, query=query, session_context=session_context)
+            list_draft, list_data = _build_event_list_response(
+                client, intent=intent, query=query, session_context=session_context
+            )
+            rk = "no_results" if not list_data.get("events") else "event_list"
+            return BuildResult(list_draft, env(rk, list_data))
 
         if intent == "time_based":
             # Bugfix (post-Week-12 audit, B1+B6): the previous code dropped
@@ -119,21 +271,32 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             # this is where filtering actually happens.
             timeframe = _resolve_timeframe(classified_intent)
             if timeframe == "today" or timeframe == "tonight":
-                return _build_event_list_response(client, intent="today_events", query=query, session_context=session_context)
-            date_range = _date_range_for_timeframe(timeframe)
-            return _build_event_list_response(
-                client,
-                intent="event_list",
-                query=query,
-                date_filter=date_range,
-                heading_override=_format_timeframe_heading(timeframe),
-                session_context=session_context,
-            )
+                list_draft, list_data = _build_event_list_response(
+                    client, intent="today_events", query=query, session_context=session_context
+                )
+            else:
+                date_range = _date_range_for_timeframe(timeframe)
+                list_draft, list_data = _build_event_list_response(
+                    client,
+                    intent="event_list",
+                    query=query,
+                    date_filter=date_range,
+                    heading_override=_format_timeframe_heading(timeframe),
+                    session_context=session_context,
+                )
+            list_data["timeframe"] = timeframe
+            rk = "no_results" if not list_data.get("events") else "event_list"
+            return BuildResult(list_draft, env(rk, list_data))
 
         if intent == "discovery":
             # Bugfix (post-Week-12 audit, B12): give discovery an explicit
             # branch so it picks up the same past-event filter as the rest.
-            return _build_event_list_response(client, intent="event_list", query=query, session_context=session_context)
+            list_draft, list_data = _build_event_list_response(
+                client, intent="event_list", query=query, session_context=session_context
+            )
+            list_data["discovery"] = True
+            rk = "no_results" if not list_data.get("events") else "event_list"
+            return BuildResult(list_draft, env(rk, list_data))
 
         if intent in {"single_event_detail", "event_detail"}:
             # Week 12 fix (Bug 2): use raw-message fallback so "Tell me about
@@ -142,19 +305,38 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             search_term = _resolve_targeted_search_term(query, classified_intent, session_context)
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
-                return _format_no_results(search_term or "your request")
-            return _truncate_whatsapp(_format_single_event(event))
+                q = search_term or "your request"
+                return BuildResult(
+                    _format_no_results(q),
+                    env("no_results", {"query": q}),
+                )
+            return BuildResult(
+                _truncate_whatsapp(_format_single_event(event)),
+                env("single_event", {"event": _compact_event_for_facts(event)}),
+            )
 
         if intent in {"sponsorship", "sponsorship_tiers"}:
             # Week 12 fix (Bug 3): if no event target was extracted, return a
             # generic donation / seva message instead of "no matching events".
             search_term = _resolve_targeted_search_term(query, classified_intent, session_context)
             if not search_term and event_id is None:
-                return _truncate_whatsapp(_format_generic_sponsorship())
+                return BuildResult(
+                    _truncate_whatsapp(_format_generic_sponsorship()),
+                    env("sponsorship", _generic_sponsorship_data()),
+                )
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
-                return _truncate_whatsapp(_format_generic_sponsorship())
-            return _truncate_whatsapp(_format_sponsorship(event))
+                return BuildResult(
+                    _truncate_whatsapp(_format_generic_sponsorship()),
+                    env("sponsorship", _generic_sponsorship_data()),
+                )
+            return BuildResult(
+                _truncate_whatsapp(_format_sponsorship(event)),
+                env(
+                    "sponsorship_event",
+                    {"event": _compact_event_for_facts(event)},
+                ),
+            )
 
         if intent in {"logistics", "parking", "logistics_parking"}:
             # Bugfix (Round-3, R3-3): if the user is asking about the temple
@@ -164,7 +346,10 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
             # picking up `selected_event_id` from session memory and
             # returning logistics for the *previously selected* event.
             if event_id is None and _is_venue_question(session_context):
-                return _truncate_whatsapp(_format_temple_info())
+                return BuildResult(
+                    _truncate_whatsapp(_format_temple_info()),
+                    env("temple_static", {"temple": _temple_static_data(), "reason": "venue_question"}),
+                )
 
             search_term = _resolve_targeted_search_term(query, classified_intent, session_context)
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
@@ -173,27 +358,49 @@ def build_response(classified_intent: dict, session_context: dict) -> str:
                 # which is almost always what a generic logistics question
                 # without a target wants.
                 if event_id is None:
-                    return _truncate_whatsapp(_format_temple_info())
-                return _format_no_results(search_term or "your request")
-            return _truncate_whatsapp(_format_logistics(event))
+                    return BuildResult(
+                        _truncate_whatsapp(_format_temple_info()),
+                        env("temple_static", {"temple": _temple_static_data(), "reason": "no_event_resolved"}),
+                    )
+                q = search_term or "your request"
+                return BuildResult(_format_no_results(q), env("no_results", {"query": q}))
+            return BuildResult(
+                _truncate_whatsapp(_format_logistics(event)),
+                env("logistics_event", {"event": _compact_event_for_facts(event)}),
+            )
 
         # Fallback:
         event = _resolve_single_event(client, event_id=event_id, query=query)
         if event is not None:
-            return _truncate_whatsapp(_format_single_event(event))
+            return BuildResult(
+                _truncate_whatsapp(_format_single_event(event)),
+                env("single_event", {"event": _compact_event_for_facts(event), "via": "fallback"}),
+            )
 
-        return _truncate_whatsapp(_build_event_list_response(client, intent="event_list", query=query, session_context=session_context))
+        list_draft, list_data = _build_event_list_response(
+            client, intent="event_list", query=query, session_context=session_context
+        )
+        rk = "no_results" if not list_data.get("events") else "event_list"
+        list_data["via"] = "fallback"
+        return BuildResult(_truncate_whatsapp(list_draft), env(rk, list_data))
 
     except APIClientError:
-        return (
+        draft = (
             "I could not retrieve event information right now. "
             "Please try again in a moment."
         )
+        return BuildResult(draft, env("api_client_error", {"message": "api_client_error"}))
     except Exception:
-        return (
+        draft = (
             "I ran into an issue while building the event response. "
             "Please try again."
         )
+        return BuildResult(draft, env("generic_error", {"message": "generic_error"}))
+
+
+def build_response(classified_intent: dict, session_context: dict) -> str:
+    """Build the final WhatsApp response for the user (template draft only)."""
+    return build_response_with_facts(classified_intent, session_context).draft
 
 
 def _get_api_client(session_context: Mapping[str, Any]) -> EventAPIClient:
@@ -451,20 +658,8 @@ def _build_event_list_response(
     date_filter: Optional[Tuple[Any, Any]] = None,
     heading_override: Optional[str] = None,
     session_context: Optional[Mapping[str, Any]] = None,
-) -> str:
-    """Build a list response. Pulls a candidate set from the API based on
-    `intent` (and `query` for search), then filters out events whose end
-    time is already in the past, then optionally restricts to a date range.
-
-    Bugfix (post-Week-12 audit):
-      - B6: the API doesn't honour `?upcoming_only=true`. We pull a wider
-        page (limit=20) and filter client-side so the user never sees the
-        Seattle LTP in the "upcoming" list on a date after it ended.
-      - T5: `date_filter=(start_date, end_date)` lets the time_based handler
-        reuse this function for "tomorrow", "this weekend", "May 23rd",
-        etc. — the API ignores `start_date=…` so all the filtering happens
-        here.
-    """
+) -> Tuple[str, Dict[str, Any]]:
+    """Build a list response; returns draft text and fact payload for ``data``."""
     if intent == "today_events":
         payload = client.get_today()
         heading_query = "today"
@@ -492,10 +687,19 @@ def _build_event_list_response(
     if heading_override:
         heading_query = heading_override
 
+    def _list_fact_data(chosen: Sequence[Mapping[str, Any]], **extra: Any) -> Dict[str, Any]:
+        data: Dict[str, Any] = {
+            "list_intent": intent,
+            "heading": heading_query,
+            "events": [_compact_event_list_row(e) for e in chosen],
+        }
+        data.update(extra)
+        return data
+
     if not events:
         if isinstance(session_context, dict):
             session_context["last_shown_event_ids"] = []
-        return _format_no_results(heading_query)
+        return _format_no_results(heading_query), _list_fact_data([], empty=True)
 
     # Cap to 5 and trim to stay under WhatsApp size.
     for count in range(min(5, len(events)), 0, -1):
@@ -509,14 +713,16 @@ def _build_event_list_response(
                 session_context["last_shown_event_ids"] = [
                     int(e["id"]) for e in chosen if isinstance(e.get("id"), (int, str)) and str(e.get("id")).strip().isdigit()
                 ]
-            return candidate
+            return candidate, _list_fact_data(chosen)
 
     if isinstance(session_context, dict):
         first = events[:1]
         session_context["last_shown_event_ids"] = [
             int(e["id"]) for e in first if isinstance(e.get("id"), (int, str)) and str(e.get("id")).strip().isdigit()
         ]
-    return _truncate_whatsapp(_format_event_list(events[:1], heading_query))
+    chosen_one = events[:1]
+    draft = _truncate_whatsapp(_format_event_list(chosen_one, heading_query))
+    return draft, _list_fact_data(chosen_one, truncated_to_single_row=True)
 
 
 def _now_ct() -> datetime:

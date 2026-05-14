@@ -27,8 +27,9 @@ from conversational_reply import (
     build_conversational_clarification_reply,
     conversational_providers_configured,
 )
+from grounded_reply import build_grounded_whatsapp_reply
 from intent_classifier import classify, warm_up as _warm_up_gemini
-from response_builder import build_response
+from response_builder import build_response, build_response_with_facts
 
 logging.basicConfig(
     level=os.getenv("LOG_LEVEL", "INFO"),
@@ -418,7 +419,26 @@ def process_message_background(
         else:
             build_started = time.monotonic()
             try:
-                reply_text = build_response(raw_classification, context)
+                if (
+                    os.getenv("ENABLE_LLM_RESPONSE_REWRITE") == "1"
+                    and conversational_providers_configured()
+                ):
+                    built = build_response_with_facts(raw_classification, context)
+                    draft = built.draft
+                    facts = built.facts or {}
+                    try:
+                        rewritten = build_grounded_whatsapp_reply(
+                            body_text,
+                            str(intent_str or ""),
+                            raw_classification.get("confidence"),
+                            facts,
+                        )
+                    except Exception as rw_exc:
+                        logger.warning("Grounded rewrite failed; using template draft: %s", rw_exc)
+                        rewritten = None
+                    reply_text = (rewritten or "").strip() or draft
+                else:
+                    reply_text = build_response(raw_classification, context)
             except Exception as exc:
                 build_error = str(exc)
                 logger.error("Response Builder Failed: %s", exc, exc_info=True)
