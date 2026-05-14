@@ -68,7 +68,6 @@ DEFAULT_SEARCH_LIMIT = 5
 
 FACTS_VERSION = 1
 
-def build_response(classified_intent: dict, session_context: dict) -> str:
 
 @dataclass(frozen=True)
 class BuildResult:
