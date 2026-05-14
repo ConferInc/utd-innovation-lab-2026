@@ -1,8 +1,9 @@
 """Optional grounded LLM rewrite of template WhatsApp replies.
 
-Enabled when ``ENABLE_LLM_RESPONSE_REWRITE=1`` and providers are configured;
-``main`` gates calls. Uses only JSON facts from ``build_response_with_facts`` —
-no free-form API synthesis in the prompt beyond those facts.
+When ``main._llm_routing_available()`` is true (Gemini or Ollama configured, and
+``DISABLE_LLM_ROUTING`` is not set), ``main`` always calls this module after
+``build_response_with_facts``. If providers fail or return nothing, the template
+draft is sent instead.
 """
 
 from __future__ import annotations

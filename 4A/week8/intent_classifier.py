@@ -1,7 +1,8 @@
-import os
 import json
 import logging
-from typing import Dict, Iterable, Optional
+import os
+import re
+from typing import Any, Dict, Iterable, Mapping, Optional
 from dotenv import load_dotenv
 
 from entity_extractor import extract_entities
@@ -125,6 +126,56 @@ INTENT_KEYWORDS = {
 }
 
 
+# Messages that clearly ask for the event catalog (never treat as "spiritual only").
+_EXPLICIT_EVENT_BROWSE = re.compile(
+    r"\b("
+    r"events?|upcoming|calendar|what'?s\s+on|what\s+is\s+on|any\s+events|"
+    r"list\s+(of\s+)?events|show\s+me\s+events|happening|coming\s+up|"
+    r"this\s+weekend|tonight|today|tomorrow|schedule"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Spiritual / counseling tone without an operational event request → do not browse GET /events.
+_SPIRITUAL_NON_EVENT = re.compile(
+    r"\b("
+    r"inner\s+peace|achieve\s+peace|find\s+peace|world\s+peace|"
+    r"enlightenment|atman|self\s+real|self[-\s]?realization|moksha|liberation|"
+    r"purpose\s+of\s+life|meaning\s+of\s+life|"
+    r"soul\b|spiritual\s+growth|spiritual\s+path|"
+    r"peace\s+for\s+others|happiness\s+for\s+others|"
+    r"how\s+do\s+i\s+achieve\s+peace|how\s+can\s+i\s+achieve\s+peace"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# "Talk to baba / guru …" is not venue logistics when no event is in play.
+_GURU_CONTACT_CHITCHAT = re.compile(
+    r"\b(how|where)\s+(do|can)\s+i\s+(talk|speak|meet|see|reach|contact)\b"
+    r".{0,48}\b(baba|guruji?|swami|maharaj|sadhguru|saint|guru)\b",
+    re.IGNORECASE,
+)
+
+
+def _should_clarify_instead_of_event_catalog(message: str, entities: Mapping[str, Any]) -> bool:
+    if entities.get("event_name") or entities.get("program_name"):
+        return False
+    if _EXPLICIT_EVENT_BROWSE.search(message):
+        return False
+    return bool(_SPIRITUAL_NON_EVENT.search(message))
+
+
+def _should_clarify_guru_contact_without_event(message: str, intent: str, entities: Mapping[str, Any]) -> bool:
+    if intent != "logistics":
+        return False
+    if entities.get("event_name"):
+        return False
+    lowered = message.lower()
+    if any(h in lowered for h in ("parking", "food", "prasad", "address", "directions", "route", "map")):
+        return False
+    return bool(_GURU_CONTACT_CHITCHAT.search(message))
+
+
 # -------------------------------
 # SYSTEM PROMPT (LLM)
 # -------------------------------
@@ -139,6 +190,12 @@ Classify the user message into exactly one of these intents:
 - discovery
 - no_results_check
 - ambiguous
+
+Important: If the user is mainly asking for personal spiritual philosophy, inner peace, enlightenment,
+life counseling, or generic "how to help the world" guidance — and they are NOT asking what is on the
+temple calendar, for parking/food/registration for an event, for recurring program times, or for
+donation logistics — choose intent "ambiguous" with confidence below 0.35. Do not label those as
+discovery or event_specific just because the temple runs programs.
 
 Respond ONLY with JSON:
 {"intent": "<intent>", "confidence": <float>}
@@ -514,6 +571,19 @@ def classify(message: str) -> Dict:
     elif used_jaccard and not result.get("has_signal", True):
         # Defensive: Jaccard reported no signal but didn't label ambiguous.
         intent = "clarification_needed"
+
+    # LLMs sometimes label broad spiritual/counseling questions as discovery,
+    # which triggers a generic upcoming-events list. Force clarification when
+    # the text is clearly non-operational and the user did not ask for a
+    # calendar-style browse. Same for "talk to baba" mis-routed as logistics
+    # without an event (otherwise the bot dumps the static temple block).
+    if intent not in ("clarification_needed", "unknown"):
+        if intent in ("discovery", "no_results_check") and _should_clarify_instead_of_event_catalog(
+            message, entities
+        ):
+            intent = "clarification_needed"
+        elif _should_clarify_guru_contact_without_event(message, intent, entities):
+            intent = "clarification_needed"
 
     return {
         "intent": intent,

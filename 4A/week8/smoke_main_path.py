@@ -1,4 +1,4 @@
-"""Test the actual main.py code path (greeting + clarification short-circuit)."""
+"""Test the actual main.py code path (classification + reply build)."""
 import os, sys, io, asyncio
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 from dotenv import load_dotenv

@@ -1,7 +1,9 @@
 """Optional LLM-authored clarification replies (Phase 3).
 
-Enabled only when ``ENABLE_CONVERSATIONAL_FALLBACK=1`` and wired from ``main``.
-This module does not read that flag; callers gate invocation.
+When ``main._llm_routing_available()`` is true (Gemini or Ollama configured, and
+``DISABLE_LLM_ROUTING`` is not set), ``main`` calls this module for
+``clarification_needed`` / ``ambiguous`` / ``unknown`` intents before falling
+back to the static clarification text.
 """
 
 from __future__ import annotations

@@ -130,6 +130,18 @@ class TestIntentClassifier(unittest.TestCase):
         self.assertIn(result["intent"], ["discovery", "clarification_needed"])
         self.assertGreaterEqual(result["confidence"], 0.0)
 
+    def test_spiritual_peace_question_not_event_catalog(self):
+        result = classify("How do I achieve peace for others?")
+        self.assertEqual(result["intent"], "clarification_needed")
+
+    def test_guru_talk_without_event_routes_to_clarification(self):
+        result = classify("How do I talk to the baba?")
+        self.assertEqual(result["intent"], "clarification_needed")
+
+    def test_explicit_upcoming_events_still_not_clarification_only(self):
+        result = classify("What are the upcoming events?")
+        self.assertIn(result["intent"], ["discovery", "time_based", "event_specific"])
+
 
 if __name__ == "__main__":
     unittest.main()

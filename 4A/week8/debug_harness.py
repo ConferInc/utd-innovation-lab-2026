@@ -50,7 +50,7 @@ TEST_MESSAGES = [
     "How can I donate to the temple?",
     # ambiguous — should clarify
     "info",
-    # greeting (handled by main.py, not the pipeline — included for completeness)
+    # greeting (handled through the normal classify + reply pipeline)
     "hi",
 ]
 

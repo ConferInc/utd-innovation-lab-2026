@@ -39,6 +39,17 @@ logger = logging.getLogger("main")
 
 load_dotenv()
 
+
+def _llm_routing_available() -> bool:
+    """Use LLM for replies when a provider is configured.
+
+    Set ``DISABLE_LLM_ROUTING=1`` to force template-only responses (ops / debug).
+    """
+    if os.getenv("DISABLE_LLM_ROUTING") == "1":
+        return False
+    return conversational_providers_configured()
+
+
 REQUIRED_RUNTIME_ENV = (
     "TWILIO_ACCOUNT_SID",
     "TWILIO_AUTH_TOKEN",
@@ -251,69 +262,6 @@ def process_message_background(
             queue_delay_ms,
         )
 
-        # Simple greeting bypass — still persist to Team 4B Postgres when configured.
-        if body_text.lower().strip() in ["hi", "hello", "hey", "namaste", "start"]:
-            reply_text = (
-                "Namaste! 🙏 Welcome to the JKYog Temple bot. You can ask me about upcoming events, "
-                "parking info, or specific schedules like Sunday Satsang."
-            )
-            send_started = time.monotonic()
-            outbound_sid = None
-            send_error = None
-            try:
-                outbound_sid = send_whatsapp_message(to=sender_phone, body=reply_text)
-            except Exception as exc:
-                send_error = str(exc)
-                logger.error("Failed to send Twilio greeting message: %s", exc, exc_info=True)
-            send_latency_ms = int((time.monotonic() - send_started) * 1000)
-            total_latency_ms = int((time.monotonic() - start_time) * 1000)
-            inbound_status = "send_failed" if send_error else "processed"
-
-            _persist_message_update(
-                db,
-                inbound_message,
-                intent="greeting",
-                status=inbound_status,
-                failure_reason=send_error,
-                total_latency_ms=total_latency_ms,
-                metadata_json={
-                    "queue_delay_ms": queue_delay_ms,
-                    "classification_latency_ms": 0,
-                    "response_build_latency_ms": 0,
-                    "upstream_api_latency_ms": 0,
-                    "send_latency_ms": send_latency_ms,
-                },
-            )
-
-            if db and conv_for_log:
-                try:
-                    log_message(
-                        db,
-                        conv_for_log,
-                        "outbound",
-                        reply_text,
-                        intent="greeting",
-                        twilio_message_sid=outbound_sid,
-                        status="sent" if not send_error else "send_failed",
-                        failure_reason=send_error,
-                        correlation_id=correlation_id,
-                        metadata_json={"send_latency_ms": send_latency_ms},
-                        total_latency_ms=send_latency_ms,
-                    )
-                except Exception as exc:
-                    logger.warning("Database logging (greeting outbound) failed: %s", exc, exc_info=True)
-                    db.rollback()
-
-            logger.info(
-                "message_flow_done correlation_id=%s intent=greeting outbound_sid=%s send_ms=%s total_ms=%s status=%s",
-                correlation_id,
-                outbound_sid or "",
-                send_latency_ms,
-                total_latency_ms,
-                inbound_status,
-            )
-            return
-
         # 1. AI Classification
         classification_started = time.monotonic()
         classification_error = None
@@ -403,26 +351,25 @@ def process_message_background(
         # Week 12 fix (Bug 4): For clarification / ambiguous / unknown we never
         # call build_response — go straight to the clarification prompt.
         if intent_str in ("clarification_needed", "ambiguous", "unknown"):
+            clar_started = time.monotonic()
             reply_text = _build_clarification_reply()
-            if (
-                os.getenv("ENABLE_CONVERSATIONAL_FALLBACK") == "1"
-                and conversational_providers_configured()
-            ):
-                generated = build_conversational_clarification_reply(
-                    body_text,
-                    intent_str,
-                    raw_classification.get("confidence"),
-                    build_clarification_context_block(),
-                )
-                if generated and generated.strip():
-                    reply_text = generated.strip()
+            if _llm_routing_available():
+                try:
+                    generated = build_conversational_clarification_reply(
+                        body_text,
+                        intent_str,
+                        raw_classification.get("confidence"),
+                        build_clarification_context_block(),
+                    )
+                    if generated and generated.strip():
+                        reply_text = generated.strip()
+                except Exception as exc:
+                    logger.warning("Conversational clarification LLM failed: %s", exc, exc_info=True)
+            build_latency_ms = int((time.monotonic() - clar_started) * 1000)
         else:
             build_started = time.monotonic()
             try:
-                if (
-                    os.getenv("ENABLE_LLM_RESPONSE_REWRITE") == "1"
-                    and conversational_providers_configured()
-                ):
+                if _llm_routing_available():
                     built = build_response_with_facts(raw_classification, context)
                     draft = built.draft
                     facts = built.facts or {}
