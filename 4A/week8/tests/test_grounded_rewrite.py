@@ -89,3 +89,31 @@ def test_grounded_providers_delegates():
 def test_rewrite_cap_respects_env(monkeypatch):
     monkeypatch.setenv("LLM_REWRITE_MAX_CHARS", "512")
     assert gr._rewrite_char_cap() == 512
+
+
+def test_formatting_guidance_event_list_multi():
+    facts = {
+        "response_kind": "event_list",
+        "data": {
+            "events": [{"name": "A"}, {"name": "B"}],
+        },
+    }
+    text = gr._formatting_guidance(facts)
+    assert "event_list" in text
+    assert "2 event" in text
+    assert "numbered list" in text
+
+
+def test_formatting_guidance_api_error_no_bullets():
+    facts = {"response_kind": "api_client_error", "data": {"message": "api_client_error"}}
+    text = gr._formatting_guidance(facts)
+    assert "api_client_error" in text
+    assert "no decorative" in text
+
+
+def test_format_grounded_user_block_appends_formatting_section():
+    facts = {"response_kind": "no_results", "data": {"query": "zzz"}}
+    block = gr._format_grounded_user_block("any events?", "event_list", 0.4, facts)
+    assert "FACTS (JSON" in block
+    assert "Formatting (instructions only" in block
+    assert "no matching events" in block.lower() or "No matching" in block

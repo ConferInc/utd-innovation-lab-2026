@@ -6,6 +6,12 @@ import conversational_reply as cr
 
 
 class TestConversationalReply(unittest.TestCase):
+    def test_format_user_block_includes_formatting_section(self):
+        block = cr._format_user_block("hello?", "unknown", 0.25, "Temple context line.")
+        self.assertIn("Reference facts", block)
+        self.assertIn("Formatting (instructions only", block)
+        self.assertIn("prose-first", block)
+
     def test_build_clarification_context_block_non_empty(self):
         s = cr.build_clarification_context_block()
         self.assertIn("Cedar Park", s)

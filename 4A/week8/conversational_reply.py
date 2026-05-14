@@ -24,7 +24,16 @@ _OLLAMA_DEFAULT_MODEL = "gemma3:4b"
 
 _REPLY_SYSTEM_PROMPT = """You are the WhatsApp helper for JKYog Radha Krishna Temple in Cedar Park, Texas.
 
-The user's message was hard to route. Write ONE short, friendly plain-text reply (WhatsApp): no markdown headings (no lines starting with #), no long nested bullet lists, no JSON.
+The user's message was hard to route. Write ONE short, friendly reply for WhatsApp in plain text — no JSON.
+
+WhatsApp formatting (use only where it improves scanability; do not decorate every word):
+- Bold: single asterisks, like *this* (do not use **double** asterisks; WhatsApp does not treat those as bold).
+- Italic: underscores, like _this_, for light emphasis on a phrase or hint.
+- No markdown headings (no lines starting with #). No HTML.
+
+Layout:
+- Default to one or two short paragraphs. If example questions help disambiguate, use at most 2–3 flat bullets or short lines — no nested bullet lists, no long catalogs.
+- A blank line between two short paragraphs is fine when you have two distinct beats (e.g. acknowledge, then ask).
 
 Rules:
 - Do not invent event names, times, parking details, or prices. If you mention events or logistics, keep it generic ("upcoming events on the calendar") or refer only to facts in the context block.
@@ -58,6 +67,11 @@ def build_clarification_context_block() -> str:
     )
 
 
+_CLARIFICATION_FORMATTING_BLOCK = """Formatting (instructions only — not new facts; do not invent beyond the reference block above):
+- Clarification turn: prose-first (one or two short paragraphs). Optional: at most 2–3 flat example questions if that genuinely helps routing.
+- You may use *bold* or _italic_ sparingly for labels or emphasis; no nested bullets; no # headings."""
+
+
 def _format_user_block(user_message: str, intent: str, confidence: Any, context_block: str) -> str:
     try:
         conf_f = float(confidence)
@@ -66,7 +80,8 @@ def _format_user_block(user_message: str, intent: str, confidence: Any, context_
     return (
         f"What the user wrote:\n{user_message.strip()}\n\n"
         f"Classifier intent: {intent} (confidence {conf_f:.2f})\n\n"
-        f"Reference facts (do not invent beyond these):\n{context_block.strip()}"
+        f"Reference facts (do not invent beyond these):\n{context_block.strip()}\n\n"
+        f"{_CLARIFICATION_FORMATTING_BLOCK}"
     )
 
 
