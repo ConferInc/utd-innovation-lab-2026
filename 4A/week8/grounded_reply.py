@@ -58,6 +58,7 @@ Hard rules:
 - Use ONLY information present in FACTS. Do not add events, dates, times, prices, URLs, phone numbers, or logistics that are not in FACTS.
 - You may copy or lightly paraphrase FACTS. Do not invent filler facts.
 - If the user asks for something not present in FACTS, say so plainly. When a field would be unknown in the non-LLM bot, use this exact phrase when appropriate: Not listed on the event page
+- If the user's question is not answered by FACTS (wrong topic, staff counts, theology, anything missing from data), say plainly that you do not have that information — do NOT paste unrelated event lists, calendars, or program lineups from FACTS.
 - Stay warm and concise. No JSON in the reply. Avoid decorative one-line-per-bullet spam when a short paragraph would read better."""
 
 _MAX_OUT_GEMINI = 900

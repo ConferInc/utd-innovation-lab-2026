@@ -28,7 +28,11 @@ _REPLY_SYSTEM_PROMPT = """You are the WhatsApp helper for Radha Krishna Temple o
 
 The user's message was hard to route. Write ONE short, friendly reply for WhatsApp in plain text — no JSON.
 
+Follow the opening / tone instructions in the user message block exactly (greeting-only vs unclear vs out-of-scope).
+
 If they only said hello, hi, namaste, good morning, or similar (no specific question yet), open with a brief warm greeting that matches their tone, then invite them to ask about events, the recurring schedule, logistics for a program, or donations — without dumping a list of event names.
+
+If the user asked something outside the bot's knowledge (staff roster, theology, etc.), say you do not have that information — do not list upcoming events or programs unless they asked for them.
 
 Focus on what the user actually wrote. Any intent label or "Internal route" metadata in the message block is only for routing — do not answer as if that label were the user's question.
 
@@ -44,7 +48,7 @@ Layout:
 Rules:
 - Do not invent event names, times, parking details, or prices. If you mention events or logistics, keep it generic ("upcoming events on the calendar") or refer only to facts in the context block.
 - Do not give personal spiritual counseling; gently point to temple programs, the website, or visiting in person.
-- Vary your opening across replies (examples: acknowledge briefly, ask a focused question, offer 2–3 example topics) — do not reuse the same opening every time.
+- Vary your wording slightly when you apologize for unclear input, but keep a clear apology first when the Opening/tone block requires it.
 - Optional: at most one warm sign-off phrase per reply (e.g. "Radhe Radhe" or similar); often skip it so replies do not sound repetitive.
 - Stay under about 500 words; the system will hard-truncate at 700 characters.
 
@@ -78,7 +82,41 @@ _CLARIFICATION_FORMATTING_BLOCK = """Formatting (instructions only — not new f
 - You may use *bold* or _italic_ sparingly for labels or emphasis; no nested bullets; no # headings."""
 
 
-def _format_user_block(user_message: str, intent: str, confidence: Any, context_block: str) -> str:
+def _clarification_tone_instruction(*, pure_greeting: bool, out_of_scope: bool) -> str:
+    if out_of_scope:
+        return (
+            "Opening / tone: The user asked something outside the bot's knowledge "
+            "(e.g. how many gurus/teachers/staff, or a roster the bot does not store). "
+            "Say clearly you do *not* have that information. "
+            "Do NOT list or suggest specific upcoming events, retreats, or program schedules. "
+            "At most one short sentence listing broad topic areas you *can* help with "
+            "(event calendar, recurring schedule, logistics for a named event, temple contact/hours, donations)."
+        )
+    if pure_greeting:
+        return (
+            "Opening / tone: The user only sent a short greeting or salutation. "
+            "Open warm and welcoming; do NOT start with an apology or "
+            "\"I couldn't understand\"."
+        )
+    return (
+        "Opening / tone: The user's message was unclear, off-topic, or not actionable. "
+        "Your FIRST sentence must say you could not understand what they meant "
+        '(e.g. "Sorry, I couldn\'t understand what you meant."). '
+        "Then in the next paragraph (or after a blank line), briefly list what you can help with: "
+        "upcoming events, recurring schedule, logistics for a named program, donations/seva — "
+        "keep it compact."
+    )
+
+
+def _format_user_block(
+    user_message: str,
+    intent: str,
+    confidence: Any,
+    context_block: str,
+    *,
+    pure_greeting: bool = False,
+    out_of_scope: bool = False,
+) -> str:
     try:
         conf_f = float(confidence)
     except (TypeError, ValueError):
@@ -86,11 +124,15 @@ def _format_user_block(user_message: str, intent: str, confidence: Any, context_
     route_line = (
         f"Internal route (metadata only — not the user's question): {intent!r}, confidence {conf_f:.2f}."
     )
+    tone = _clarification_tone_instruction(
+        pure_greeting=pure_greeting, out_of_scope=out_of_scope
+    )
     return (
         "Your reply must directly respond to what the user wrote below.\n\n"
         f"What the user wrote:\n{user_message.strip()}\n\n"
         f"Reference facts (do not invent beyond these):\n{context_block.strip()}\n\n"
         f"{route_line}\n\n"
+        f"{tone}\n\n"
         f"{_CLARIFICATION_FORMATTING_BLOCK}"
     )
 
@@ -123,7 +165,15 @@ def _sanitize_reply(text: str) -> str:
     return f"{trimmed}..."
 
 
-def _reply_with_gemini(user_message: str, intent: str, confidence: Any, context_block: str) -> Optional[str]:
+def _reply_with_gemini(
+    user_message: str,
+    intent: str,
+    confidence: Any,
+    context_block: str,
+    *,
+    pure_greeting: bool = False,
+    out_of_scope: bool = False,
+) -> Optional[str]:
     client = _get_gemini_client()
     if client is None:
         return None
@@ -133,7 +183,14 @@ def _reply_with_gemini(user_message: str, intent: str, confidence: Any, context_
         return None
 
     model = os.getenv("GEMINI_MODEL_REPLY", "gemini-2.5-flash-lite")
-    user_block = _format_user_block(user_message, intent, confidence, context_block)
+    user_block = _format_user_block(
+        user_message,
+        intent,
+        confidence,
+        context_block,
+        pure_greeting=pure_greeting,
+        out_of_scope=out_of_scope,
+    )
 
     def _call():
         return client.models.generate_content(
@@ -164,7 +221,13 @@ def _reply_with_gemini(user_message: str, intent: str, confidence: Any, context_
 
 
 def _reply_with_ollama_cloud(
-    user_message: str, intent: str, confidence: Any, context_block: str
+    user_message: str,
+    intent: str,
+    confidence: Any,
+    context_block: str,
+    *,
+    pure_greeting: bool = False,
+    out_of_scope: bool = False,
 ) -> Optional[str]:
     api_key = (
         os.getenv("OLLAMA_CLOUD_API_KEY")
@@ -177,7 +240,14 @@ def _reply_with_ollama_cloud(
     base = (os.getenv("OLLAMA_CLOUD_BASE_URL") or _OLLAMA_CLOUD_BASE).rstrip("/")
     model = os.getenv("OLLAMA_CLOUD_MODEL") or _OLLAMA_DEFAULT_MODEL
     url = f"{base}/chat/completions"
-    user_block = _format_user_block(user_message, intent, confidence, context_block)
+    user_block = _format_user_block(
+        user_message,
+        intent,
+        confidence,
+        context_block,
+        pure_greeting=pure_greeting,
+        out_of_scope=out_of_scope,
+    )
     payload = {
         "model": model,
         "temperature": 0.65,
@@ -211,10 +281,20 @@ def build_conversational_clarification_reply(
     intent: str,
     confidence: Any,
     context: str,
+    *,
+    pure_greeting: bool = False,
+    out_of_scope: bool = False,
 ) -> Optional[str]:
     """Return plain text for WhatsApp, or ``None`` to fall back to static clarification."""
     for fn in (_reply_with_gemini, _reply_with_ollama_cloud):
-        raw = fn(user_message, intent, confidence, context)
+        raw = fn(
+            user_message,
+            intent,
+            confidence,
+            context,
+            pure_greeting=pure_greeting,
+            out_of_scope=out_of_scope,
+        )
         if not raw:
             continue
         cleaned = _sanitize_reply(raw)

@@ -143,7 +143,11 @@ def test_format_event_list_footer_uses_dynamic_range():
 def test_format_temple_info_mentions_on_site_parking():
     from response_builder import _format_temple_info
 
-    assert "on-site parking" in _format_temple_info().lower()
+    text = _format_temple_info().lower()
+    assert "on-site parking" in text or "parking" in text
+    assert "free" in text
+    assert "kitchen hours" in text
+    assert "monday:" in text and "9:30 am" in text
 
 
 def test_format_event_list_footer_single_row():

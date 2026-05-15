@@ -7,7 +7,9 @@ import conversational_reply as cr
 
 class TestConversationalReply(unittest.TestCase):
     def test_format_user_block_includes_formatting_section(self):
-        block = cr._format_user_block("hello?", "unknown", 0.25, "Temple context line.")
+        block = cr._format_user_block(
+            "hello?", "unknown", 0.25, "Temple context line.", pure_greeting=True
+        )
         self.assertIn("Your reply must directly respond to what the user wrote below.", block)
         self.assertIn("Reference facts", block)
         self.assertIn("Internal route", block)
@@ -15,6 +17,24 @@ class TestConversationalReply(unittest.TestCase):
         self.assertLess(block.index("Reference facts"), block.index("Internal route"))
         self.assertIn("Formatting (instructions only", block)
         self.assertIn("prose-first", block)
+        self.assertIn("short greeting", block.lower())
+
+    def test_format_user_block_unclear_opens_with_apology_instruction(self):
+        block = cr._format_user_block(
+            "sdfghj", "unknown", 0.2, "Temple context.", pure_greeting=False
+        )
+        self.assertIn("FIRST sentence must say you could not understand", block)
+        self.assertIn("Sorry", block)
+
+    def test_format_user_block_out_of_scope_bans_event_lists(self):
+        block = cr._format_user_block(
+            "how many gurus at the temple?",
+            "clarification_needed",
+            0.4,
+            "Temple context.",
+            out_of_scope=True,
+        )
+        self.assertIn("Do NOT list or suggest specific upcoming events", block)
 
     def test_build_clarification_context_block_non_empty(self):
         s = cr.build_clarification_context_block()

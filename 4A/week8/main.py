@@ -28,7 +28,12 @@ from conversational_reply import (
     conversational_providers_configured,
 )
 from grounded_reply import build_grounded_whatsapp_reply
-from intent_classifier import classify, warm_up as _warm_up_gemini
+from intent_classifier import (
+    _is_pure_greeting,
+    _is_temple_personnel_roster_question,
+    classify,
+    warm_up as _warm_up_gemini,
+)
 from response_builder import build_response, build_response_with_facts
 
 logging.basicConfig(
@@ -177,9 +182,17 @@ def _extract_shown_list_index_1based(body_text: str) -> Optional[int]:
     return None
 
 
-def _build_clarification_reply() -> str:
+def _build_out_of_scope_reply() -> str:
     return (
-        "Hi there — happy to help.\n\n"
+        "Sorry — I don't have that information. This assistant only has access to "
+        "the *event calendar*, *recurring program times*, *practical logistics* for named events, "
+        "*temple address / hours / parking*, and *donations*.\n\n"
+        "Ask me in your own words about any of those, and I'll do my best to help."
+    )
+
+
+def _build_clarification_reply(*, pure_greeting: bool = False) -> str:
+    topics = (
         "Tell me what you're looking for! For example:\n"
         "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
         "- a *specific event* (e.g. \"tell me about Holi\")\n"
@@ -187,6 +200,9 @@ def _build_clarification_reply() -> str:
         "- *parking / logistics* for an event\n"
         "- *donations / seva*"
     )
+    if pure_greeting:
+        return f"Hi there — happy to help.\n\n{topics}"
+    return f"Sorry, I couldn't understand what you meant.\n\n{topics}"
 
 
 def send_whatsapp_message(to: str, body: str) -> str:
@@ -353,7 +369,14 @@ def process_message_background(
         # call build_response — go straight to the clarification prompt.
         if intent_str in ("clarification_needed", "ambiguous", "unknown"):
             clar_started = time.monotonic()
-            reply_text = _build_clarification_reply()
+            ent = raw_classification.get("entities") or {}
+            entities_map = ent if isinstance(ent, dict) else {}
+            pure_greeting = _is_pure_greeting(body_text, entities_map)
+            staff_roster_q = _is_temple_personnel_roster_question(body_text, entities_map)
+            if staff_roster_q:
+                reply_text = _build_out_of_scope_reply()
+            else:
+                reply_text = _build_clarification_reply(pure_greeting=pure_greeting)
             if _llm_routing_available():
                 try:
                     generated = build_conversational_clarification_reply(
@@ -361,6 +384,8 @@ def process_message_background(
                         intent_str,
                         raw_classification.get("confidence"),
                         build_clarification_context_block(),
+                        pure_greeting=pure_greeting and not staff_roster_q,
+                        out_of_scope=staff_roster_q,
                     )
                     if generated and generated.strip():
                         reply_text = generated.strip()

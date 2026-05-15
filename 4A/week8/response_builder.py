@@ -181,6 +181,29 @@ def _compact_event_for_facts(event: Mapping[str, Any]) -> Dict[str, Any]:
     return out
 
 
+# Temple + kitchen wall-clock hours (Central Time), aligned to public listing.
+_TEMPLE_HOURS_BY_DAY_CT: Tuple[Tuple[str, str], ...] = (
+    ("Monday", "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM"),
+    ("Tuesday", "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM"),
+    ("Wednesday", "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM"),
+    ("Thursday", "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM"),
+    ("Friday", "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM"),
+    ("Saturday", "9:30 AM – 8:30 PM"),
+    ("Sunday", "9:30 AM – 8:30 PM"),
+)
+# Listing shows kitchen Thu–Sun only; Mon–Wed not on the same card.
+_KITCHEN_HOURS_BY_DAY_CT: Tuple[Tuple[str, str], ...] = (
+    ("Thursday", "11:30 AM – 1:30 PM, 5:30 PM – 8:30 PM"),
+    ("Friday", "11:30 AM – 1:30 PM, 5:30 PM – 8:30 PM"),
+    ("Saturday", "11:30 AM – 8:30 PM"),
+    ("Sunday", "11:30 AM – 8:30 PM"),
+)
+_KITCHEN_HOURS_NOTE_CT = (
+    "Kitchen hours on the public listing cover Thursday–Sunday only; "
+    "for Monday–Wednesday, check with the temple or jkyog.org."
+)
+
+
 def _temple_static_data() -> Dict[str, Any]:
     """Structured mirror of ``_format_temple_info`` (no narrative)."""
     return {
@@ -191,6 +214,9 @@ def _temple_static_data() -> Dict[str, Any]:
         "email": "contact@jkyog.org",
         "daily_darshan_weekdays_ct": "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM",
         "daily_darshan_weekends_ct": "9:30 AM – 8:30 PM",
+        "temple_hours_by_day_ct": [{"day": d, "hours_ct": h} for d, h in _TEMPLE_HOURS_BY_DAY_CT],
+        "kitchen_hours_by_day_ct": [{"day": d, "hours_ct": h} for d, h in _KITCHEN_HOURS_BY_DAY_CT],
+        "kitchen_hours_note_ct": _KITCHEN_HOURS_NOTE_CT,
         "daily_programs_ct": [
             "Bhog: 11:30 AM – 12:00 PM",
             "Aarti: 12:15 PM – 12:45 PM, 7:00 PM – 7:30 PM",
@@ -201,7 +227,10 @@ def _temple_static_data() -> Dict[str, Any]:
         "website": "jkyog.org",
         "donations_url": "jkyog.org/donate",
         "live_stream_url": "jkyog.org/live",
-        "parking_note": "On-site parking is available at the temple.",
+        "parking_note": (
+            "Parking at the Radha Krishna Temple of Dallas in Allen, Texas, is available "
+            "and free of charge for visitors."
+        ),
     }
 
 
@@ -1260,40 +1289,49 @@ def _format_temple_info() -> str:
     R3-1) or "no events found". Now they get a real answer. Source: the
     Radha Krishna Temple of Dallas public information.
     """
-    return "\n".join([
-        "*Radha Krishna Temple of Dallas*",
-        "",
-        "🏛️ *Address*",
-        "1450 N. Watters Road",
-        "Allen, TX 75013, USA",
-        "",
-        "📞 *Contact*",
-        "Phone / WhatsApp: +1 (469) 444-7173",
-        "Email: contact@jkyog.org",
-        "",
-        "🕐 *Daily darshan hours (CT)*",
-        "Weekdays: 9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM",
-        "Weekends: 9:30 AM – 8:30 PM",
-        "",
-        "🙏 *Daily programs (CT)*",
-        "- Bhog: 11:30 AM – 12:00 PM",
-        "- Aarti: 12:15 PM – 12:45 PM, 7:00 PM – 7:30 PM",
-        "- Bhajans: 6:00 PM – 7:00 PM",
-        "",
-        "🌅 *Sunday Satsang*: 10:30 AM – 12:30 PM CT",
-        "🍽️ *Mahaprasad after Sunday Satsang*: 12:30 PM – 1:30 PM CT",
-        "",
-        "🌐 *Online*",
-        "Website: jkyog.org",
-        "Donations: jkyog.org/donate",
-        "Live stream: jkyog.org/live",
-        "",
-        "🅿️ *Parking*",
-        "On-site parking is available at the temple.",
-        "",
-        "Ask me about: *upcoming events*, *Sunday Satsang*, "
-        "*aarti times*, *donations*, or *parking* for a specific event.",
-    ]).strip()
+    temple_hour_lines = [f"{day}: {hours}" for day, hours in _TEMPLE_HOURS_BY_DAY_CT]
+    kitchen_hour_lines = [f"{day}: {hours}" for day, hours in _KITCHEN_HOURS_BY_DAY_CT]
+    return "\n".join(
+        [
+            "*Radha Krishna Temple of Dallas*",
+            "",
+            "🏛️ *Address*",
+            "1450 N. Watters Road",
+            "Allen, TX 75013, USA",
+            "",
+            "📞 *Contact*",
+            "Phone / WhatsApp: +1 (469) 444-7173",
+            "Email: contact@jkyog.org",
+            "",
+            "🕐 *Temple hours — darshan (CT)*",
+            *temple_hour_lines,
+            "",
+            "🍽️ *Kitchen hours (CT)*",
+            *kitchen_hour_lines,
+            "",
+            _KITCHEN_HOURS_NOTE_CT,
+            "",
+            "🙏 *Daily programs (CT)*",
+            "- Bhog: 11:30 AM – 12:00 PM",
+            "- Aarti: 12:15 PM – 12:45 PM, 7:00 PM – 7:30 PM",
+            "- Bhajans: 6:00 PM – 7:00 PM",
+            "",
+            "🌅 *Sunday Satsang*: 10:30 AM – 12:30 PM CT",
+            "🍽️ *Mahaprasad after Sunday Satsang*: 12:30 PM – 1:30 PM CT",
+            "",
+            "🌐 *Online*",
+            "Website: jkyog.org",
+            "Donations: jkyog.org/donate",
+            "Live stream: jkyog.org/live",
+            "",
+            "🅿️ *Parking*",
+            "Parking at the Radha Krishna Temple of Dallas in Allen, Texas, is available "
+            "and free of charge for visitors.",
+            "",
+            "Ask me about: *upcoming events*, *Sunday Satsang*, "
+            "*aarti times*, *donations*, or *parking* for a specific event.",
+        ]
+    ).strip()
 
 
 def _format_no_results(query: str) -> str:

@@ -58,6 +58,8 @@ def test_temple_static_facts_shape():
     br = build_response_with_facts(classified, ctx)
     assert br.facts.get("response_kind") == "temple_static"
     assert "address_line1" in br.facts["data"]["temple"]
+    assert len(br.facts["data"]["temple"]["temple_hours_by_day_ct"]) == 7
+    assert len(br.facts["data"]["temple"]["kitchen_hours_by_day_ct"]) == 4
     assert br.draft
 
 

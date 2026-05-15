@@ -45,7 +45,7 @@ logging.getLogger("google_genai").setLevel(logging.WARNING)
 
 log = logging.getLogger("verify_week12")
 
-from intent_classifier import classify, warm_up
+from intent_classifier import classify, warm_up, _is_pure_greeting, _is_temple_personnel_roster_question
 from response_builder import build_response
 
 API_BASE = os.getenv("EVENTS_API_BASE_URL")
@@ -396,8 +396,10 @@ def run_case(case: Case) -> Result:
 
     # Don't call build_response for clarification_needed — main.py wouldn't.
     if intent in ("clarification_needed", "ambiguous", "unknown"):
-        reply = (
-            "Hi there — happy to help.\n\n"
+        ent = classification.get("entities") or {}
+        entities_map = ent if isinstance(ent, dict) else {}
+        pure = _is_pure_greeting(case.message, entities_map)
+        topics = (
             "Tell me what you're looking for! For example:\n"
             "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
             "- a *specific event* (e.g. \"tell me about Holi\")\n"
@@ -405,6 +407,17 @@ def run_case(case: Case) -> Result:
             "- *parking / logistics* for an event\n"
             "- *donations / seva*"
         )
+        if _is_temple_personnel_roster_question(case.message, entities_map):
+            reply = (
+                "Sorry — I don't have that information. This assistant only has access to "
+                "the *event calendar*, *recurring program times*, *practical logistics* for named events, "
+                "*temple address / hours / parking*, and *donations*.\n\n"
+                "Ask me in your own words about any of those, and I'll do my best to help."
+            )
+        elif pure:
+            reply = f"Hi there — happy to help.\n\n{topics}"
+        else:
+            reply = f"Sorry, I couldn't understand what you meant.\n\n{topics}"
     else:
         try:
             reply = build_response(classification, CTX(case.message)) or ""

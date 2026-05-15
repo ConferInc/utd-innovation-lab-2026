@@ -152,6 +152,17 @@ class TestIntentClassifier(unittest.TestCase):
         result = classify("Hello, any events this weekend?")
         self.assertIn(result["intent"], ["discovery", "time_based", "event_specific", "clarification_needed"])
 
+    def test_gibberish_routes_to_clarification(self):
+        result = classify("sdfghj")
+        self.assertEqual(result["intent"], "clarification_needed")
+
+    @patch("intent_classifier._classify_with_gemini", return_value={"intent": "discovery", "confidence": 0.95})
+    def test_staff_roster_question_overrides_discovery(self, _mock_gemini):
+        result = classify(
+            "how many spiritual teachers or gurus are there at the temple?"
+        )
+        self.assertEqual(result["intent"], "clarification_needed")
+
 
 if __name__ == "__main__":
     unittest.main()

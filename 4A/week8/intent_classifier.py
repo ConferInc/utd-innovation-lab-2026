@@ -176,6 +176,44 @@ def _should_clarify_guru_contact_without_event(message: str, intent: str, entiti
     return bool(_GURU_CONTACT_CHITCHAT.search(message))
 
 
+def _is_temple_personnel_roster_question(message: str, entities: Mapping[str, Any]) -> bool:
+    """Staff / guru counts — not in API facts; must not trigger event listings."""
+    if entities.get("event_name") or entities.get("program_name"):
+        return False
+    if _EXPLICIT_EVENT_BROWSE.search(message):
+        return False
+    lowered = message.lower()
+    place = bool(
+        re.search(r"\b(temple|allen|dallas|radha\s+krishna|jk\s*yog)\b", lowered)
+        or re.search(r"\b(at|in)\s+the\s+temple\b", lowered)
+    )
+    if not place:
+        return False
+    if re.search(
+        r"\bhow\s+many\b.{0,120}\b("
+        r"gurus?|spiritual\s+teachers?|teachers?|swamis?|maharaj(?:as|es)?|"
+        r"priests?|pandits?|monks?|acharyas?|saints?|leaders?|instructors?"
+        r")\b",
+        lowered,
+    ):
+        return True
+    if re.search(
+        r"\b(who\s+are|who\s+is)\b.{0,120}\b("
+        r"gurus?|spiritual\s+teachers?|swamis?|maharaj|priests?|pandits?"
+        r")\b",
+        lowered,
+    ):
+        return True
+    if re.search(
+        r"\b(list|names?\s+of)\b.{0,80}\b("
+        r"gurus?|spiritual\s+teachers?|swamis?|maharaj|staff|priests?"
+        r")\b",
+        lowered,
+    ):
+        return True
+    return False
+
+
 # Standalone hi/hello/etc. must not hit discovery → generic event list (LLMs often over-label).
 _PURE_GREETING_FORBIDDEN = frozenset(
     {
@@ -356,6 +394,15 @@ def _is_pure_greeting(message: str, entities: Mapping[str, Any]) -> bool:
     return True
 
 
+def _is_likely_gibberish(message: str) -> bool:
+    """Heuristic for random keyboard input (e.g. sdfghj) — letters but no vowels."""
+    letters = re.sub(r"[^a-zA-Z]", "", message).lower()
+    if len(letters) < 5:
+        return False
+    vowels = frozenset("aeiouy")
+    return not any(ch in vowels for ch in letters)
+
+
 # -------------------------------
 # SYSTEM PROMPT (LLM)
 # -------------------------------
@@ -381,6 +428,9 @@ If the message is ONLY a short greeting or salutation (e.g. "hi", "hello", "hey 
 "namaste", "radhe radhe") with no question about events, schedule, parking, donations, or a named
 program — choose intent "ambiguous" with confidence below 0.35. Do NOT use "discovery" for bare
 greetings.
+
+Questions about how many gurus/spiritual teachers/staff are at the temple, or who they are by name
+roster — choose intent "ambiguous" below 0.35 (not discovery); the bot has no staff directory in its data.
 
 Respond ONLY with JSON:
 {"intent": "<intent>", "confidence": <float>}
@@ -773,6 +823,18 @@ def classify(message: str) -> Dict:
     # Bare "hello" / "good morning" etc. must not become discovery → event catalog
     # when an LLM tier overconfidently labels small talk.
     if intent not in ("clarification_needed", "unknown") and _is_pure_greeting(message, entities):
+        intent = "clarification_needed"
+        confidence = min(float(confidence or 0.0), 0.55)
+
+    # Random keyboard-style input (no vowels) — never dump the events list.
+    if intent not in ("clarification_needed", "unknown") and _is_likely_gibberish(message):
+        intent = "clarification_needed"
+        confidence = min(float(confidence or 0.0), 0.55)
+
+    # Staff / guru roster questions — not in event API; never browse events.
+    if intent not in ("clarification_needed", "unknown") and _is_temple_personnel_roster_question(
+        message, entities
+    ):
         intent = "clarification_needed"
         confidence = min(float(confidence or 0.0), 0.55)
 
