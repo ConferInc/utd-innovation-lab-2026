@@ -179,7 +179,7 @@ def _should_clarify_guru_contact_without_event(message: str, intent: str, entiti
 # -------------------------------
 # SYSTEM PROMPT (LLM)
 # -------------------------------
-_SYSTEM_PROMPT = """You are an intent classifier for a WhatsApp bot for JKYog Radha Krishna Temple.
+_SYSTEM_PROMPT = """You are an intent classifier for a WhatsApp bot for Radha Krishna Temple of Dallas (Allen, TX).
 
 Classify the user message into exactly one of these intents:
 - time_based

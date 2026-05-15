@@ -138,9 +138,9 @@ def _compact_event_for_facts(event: Mapping[str, Any]) -> Dict[str, Any]:
 def _temple_static_data() -> Dict[str, Any]:
     """Structured mirror of ``_format_temple_info`` (no narrative)."""
     return {
-        "name": "JKYog Radha Krishna Temple",
-        "address_line1": "1610 W Whitestone Blvd, Suite #100",
-        "address_line2": "Cedar Park, TX 78613, USA",
+        "name": "Radha Krishna Temple of Dallas",
+        "address_line1": "1450 N. Watters Road",
+        "address_line2": "Allen, TX 75013, USA",
         "phone_whatsapp": "+1 (469) 444-7173",
         "email": "contact@jkyog.org",
         "daily_darshan_weekdays_ct": "9:30 AM – 1:00 PM, 5:30 PM – 8:30 PM",
@@ -1200,14 +1200,14 @@ def _format_temple_info() -> str:
     venue questions used to hit the event-search path and either
     returned the previously-selected event's logistics block (because of
     R3-1) or "no events found". Now they get a real answer. Source: the
-    JKYog Radha Krishna Temple public information page.
+    Radha Krishna Temple of Dallas public information.
     """
     return "\n".join([
-        "*JKYog Radha Krishna Temple*",
+        "*Radha Krishna Temple of Dallas*",
         "",
         "🏛️ *Address*",
-        "1610 W Whitestone Blvd, Suite #100",
-        "Cedar Park, TX 78613, USA",
+        "1450 N. Watters Road",
+        "Allen, TX 75013, USA",
         "",
         "📞 *Contact*",
         "Phone / WhatsApp: +1 (469) 444-7173",
@@ -1258,7 +1258,7 @@ def _format_generic_sponsorship() -> str:
     seva / donation guidance with the temple's public links.
     """
     lines = [
-        "*Donations & Seva at JKYog Radha Krishna Temple* 🙏",
+        "*Donations & Seva at Radha Krishna Temple of Dallas* 🙏",
         "",
         "Your support keeps daily worship, prasad and community programs running.",
         "",

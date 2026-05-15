@@ -24,7 +24,7 @@ _OLLAMA_TIMEOUT_S = 8.0
 _OLLAMA_CLOUD_BASE = "https://ollama.com/v1"
 _OLLAMA_DEFAULT_MODEL = "gemma3:4b"
 
-_REPLY_SYSTEM_PROMPT = """You are the WhatsApp helper for JKYog Radha Krishna Temple in Cedar Park, Texas.
+_REPLY_SYSTEM_PROMPT = """You are the WhatsApp helper for Radha Krishna Temple of Dallas in Allen, Texas.
 
 The user's message was hard to route. Write ONE short, friendly reply for WhatsApp in plain text — no JSON.
 
@@ -61,8 +61,8 @@ def conversational_providers_configured() -> bool:
 def build_clarification_context_block() -> str:
     """Compact temple facts for the reply model (not the full WhatsApp temple block)."""
     return (
-        "Temple: JKYog Radha Krishna Temple, Cedar Park, TX. "
-        "Address: 1610 W Whitestone Blvd Suite #100, Cedar Park, TX 78613. "
+        "Temple: Radha Krishna Temple of Dallas, Allen, TX. "
+        "Address: 1450 N. Watters Road, Allen, TX 75013. "
         "Phone/WhatsApp: +1 (469) 444-7173. Website: jkyog.org; donations: jkyog.org/donate. "
         "The bot can help with: upcoming events, recurring schedule (e.g. Sunday Satsang), "
         "logistics for a named event, and donations/seva."

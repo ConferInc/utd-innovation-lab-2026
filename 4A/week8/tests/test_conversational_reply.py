@@ -14,7 +14,7 @@ class TestConversationalReply(unittest.TestCase):
 
     def test_build_clarification_context_block_non_empty(self):
         s = cr.build_clarification_context_block()
-        self.assertIn("Cedar Park", s)
+        self.assertIn("Allen", s)
         self.assertIn("jkyog.org", s)
 
     def test_sanitize_strips_heading_lines_and_caps(self):
