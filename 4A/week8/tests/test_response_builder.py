@@ -4,6 +4,7 @@ from unittest.mock import patch
 from entity_extractor import extract_entities
 from response_builder import (
     _date_range_for_timeframe,
+    _event_list_intro_heading,
     _format_event_list,
     _format_timeframe_heading,
     build_response,
@@ -157,3 +158,33 @@ def test_format_event_list_footer_single_row():
     text = _format_event_list(events, "tomorrow")
     assert "1 for full details" in text
     assert "1-1" not in text
+
+
+def test_format_event_list_heading_for_intro_overrides_display():
+    events = [
+        {
+            "name": "E",
+            "start_datetime": "2030-01-01T10:00:00",
+            "end_datetime": "2030-01-01T12:00:00",
+            "location_name": "Hall",
+        },
+    ]
+    text = _format_event_list(events, "upcoming events", heading_for_intro="What's on this weekend?")
+    assert "What's on this weekend?" in text
+    assert "*upcoming events*" not in text
+
+
+def test_event_list_intro_heading_prefers_trimmed_user_message():
+    assert (
+        _event_list_intro_heading("upcoming events", {"user_message": "  Any programs soon?  "})
+        == "Any programs soon?"
+    )
+    assert _event_list_intro_heading("upcoming events", {"user_message": ""}) == "upcoming events"
+    assert _event_list_intro_heading("next weekend", {"user_message": "ignored"}) == "next weekend"
+
+
+def test_event_list_intro_heading_truncates_long_user_message():
+    long_msg = "word " * 30
+    out = _event_list_intro_heading("upcoming events", {"user_message": long_msg})
+    assert len(out) <= 80
+    assert out.endswith("…")

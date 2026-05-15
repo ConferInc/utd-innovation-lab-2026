@@ -77,13 +77,59 @@ class BuildResult:
     facts: Optional[Dict[str, Any]]
 
 
-def _facts_envelope(classifier_intent: str, response_kind: str, data: Mapping[str, Any]) -> Dict[str, Any]:
-    return {
+_USER_MESSAGE_ECHO_MAX = 200
+_EVENT_LIST_GENERIC_HEADING = "upcoming events"
+_EVENT_LIST_INTRO_USER_CAP = 80
+
+
+def _user_message_echo(session_context: Optional[Mapping[str, Any]]) -> Optional[str]:
+    """Non-authoritative copy of the user message for rewriter alignment (trimmed, capped)."""
+    if not session_context:
+        return None
+    raw = str(session_context.get("user_message") or "").strip()
+    if not raw:
+        return None
+    one_line = " ".join(raw.split())
+    if len(one_line) > _USER_MESSAGE_ECHO_MAX:
+        one_line = one_line[: _USER_MESSAGE_ECHO_MAX - 1].rstrip() + "…"
+    return one_line
+
+
+def _event_list_intro_heading(
+    heading_query: str,
+    session_context: Optional[Mapping[str, Any]],
+) -> str:
+    """Display-only intro line when the list has no resolved search query."""
+    if heading_query != _EVENT_LIST_GENERIC_HEADING:
+        return heading_query
+    if not isinstance(session_context, Mapping):
+        return heading_query
+    raw = str(session_context.get("user_message") or "").strip()
+    if not raw:
+        return heading_query
+    one = " ".join(raw.split())
+    if len(one) > _EVENT_LIST_INTRO_USER_CAP:
+        one = one[: _EVENT_LIST_INTRO_USER_CAP - 1].rstrip() + "…"
+    return one or heading_query
+
+
+def _facts_envelope(
+    classifier_intent: str,
+    response_kind: str,
+    data: Mapping[str, Any],
+    *,
+    session_context: Optional[Mapping[str, Any]] = None,
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {
         "facts_version": FACTS_VERSION,
         "classifier_intent": classifier_intent,
         "response_kind": response_kind,
         "data": dict(data),
     }
+    echo = _user_message_echo(session_context)
+    if echo:
+        out["user_message_echo"] = echo
+    return out
 
 
 def _compact_event_list_row(event: Mapping[str, Any]) -> Dict[str, Any]:
@@ -232,7 +278,9 @@ def build_response_with_facts(classified_intent: dict, session_context: dict) ->
     query = _resolve_query(classified_intent, session_context)
 
     def env(response_kind: str, data: Mapping[str, Any]) -> Dict[str, Any]:
-        return _facts_envelope(classifier_intent, response_kind, data)
+        return _facts_envelope(
+            classifier_intent, response_kind, data, session_context=session_context
+        )
 
     try:
         if intent == "recurring_schedule":
@@ -686,6 +734,8 @@ def _build_event_list_response(
     if heading_override:
         heading_query = heading_override
 
+    list_intro_heading = _event_list_intro_heading(heading_query, session_context)
+
     def _list_fact_data(chosen: Sequence[Mapping[str, Any]], **extra: Any) -> Dict[str, Any]:
         data: Dict[str, Any] = {
             "list_intent": intent,
@@ -703,7 +753,7 @@ def _build_event_list_response(
     # Cap to 5 and trim to stay under WhatsApp size.
     for count in range(min(5, len(events)), 0, -1):
         chosen = events[:count]
-        candidate = _format_event_list(chosen, heading_query)
+        candidate = _format_event_list(chosen, heading_query, heading_for_intro=list_intro_heading)
         if len(candidate) <= WHATSAPP_CHAR_LIMIT:
             # Bugfix (post-Week-12 audit): record the event IDs we just
             # showed in session memory, so a follow-up bare digit ("2") can
@@ -720,7 +770,9 @@ def _build_event_list_response(
             int(e["id"]) for e in first if isinstance(e.get("id"), (int, str)) and str(e.get("id")).strip().isdigit()
         ]
     chosen_one = events[:1]
-    draft = _truncate_whatsapp(_format_event_list(chosen_one, heading_query))
+    draft = _truncate_whatsapp(
+        _format_event_list(chosen_one, heading_query, heading_for_intro=list_intro_heading)
+    )
     return draft, _list_fact_data(chosen_one, truncated_to_single_row=True)
 
 
@@ -1135,8 +1187,14 @@ def _format_single_event(event: Mapping[str, Any]) -> str:
     return "\n".join(lines).strip()
 
 
-def _format_event_list(events: Sequence[Mapping[str, Any]], query: str) -> str:
-    lines = [f"Here are the events I found for *{query}*:", ""]
+def _format_event_list(
+    events: Sequence[Mapping[str, Any]],
+    query: str,
+    *,
+    heading_for_intro: Optional[str] = None,
+) -> str:
+    intro = heading_for_intro if heading_for_intro is not None else query
+    lines = [f"Here are the events I found for *{intro}*:", ""]
     for index, event in enumerate(events, start=1):
         lines.append(f"{index}) *{_value_or_missing(event.get('name'))}*")
         lines.append(f"   {_format_short_date_time(event)}")

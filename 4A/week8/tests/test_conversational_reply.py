@@ -8,7 +8,11 @@ import conversational_reply as cr
 class TestConversationalReply(unittest.TestCase):
     def test_format_user_block_includes_formatting_section(self):
         block = cr._format_user_block("hello?", "unknown", 0.25, "Temple context line.")
+        self.assertIn("Your reply must directly respond to what the user wrote below.", block)
         self.assertIn("Reference facts", block)
+        self.assertIn("Internal route", block)
+        self.assertIn("Temple context line.", block)
+        self.assertLess(block.index("Reference facts"), block.index("Internal route"))
         self.assertIn("Formatting (instructions only", block)
         self.assertIn("prose-first", block)
 

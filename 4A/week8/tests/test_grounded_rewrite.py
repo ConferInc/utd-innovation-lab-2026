@@ -49,6 +49,7 @@ def test_build_response_wrapper_matches_with_facts_draft():
     assert br.facts.get("facts_version") == 1
     assert br.facts.get("response_kind") == "logistics_event"
     assert br.facts["data"]["event"]["name"] == "Test Holi"
+    assert br.facts.get("user_message_echo") == "parking for holi"
 
 
 def test_temple_static_facts_shape():
@@ -102,6 +103,7 @@ def test_formatting_guidance_event_list_multi():
     assert "event_list" in text
     assert "2 event" in text
     assert "numbered list" in text
+    assert "subordinate" in text.lower()
 
 
 def test_formatting_guidance_api_error_no_bullets():
@@ -109,11 +111,24 @@ def test_formatting_guidance_api_error_no_bullets():
     text = gr._formatting_guidance(facts)
     assert "api_client_error" in text
     assert "no decorative" in text
+    assert "subordinate" in text.lower()
 
 
 def test_format_grounded_user_block_appends_formatting_section():
     facts = {"response_kind": "no_results", "data": {"query": "zzz"}}
     block = gr._format_grounded_user_block("any events?", "event_list", 0.4, facts)
+    assert "Your reply must directly address the user's question below." in block
     assert "FACTS (JSON" in block
+    assert "Internal route" in block
+    assert "'event_list'" in block or "event_list" in block
+    assert block.index("FACTS (JSON") < block.index("Internal route")
     assert "Formatting (instructions only" in block
     assert "no matching events" in block.lower() or "No matching" in block
+    assert "subordinate" in block.lower()
+
+
+def test_format_grounded_user_block_classifier_not_before_facts():
+    facts = {"response_kind": "event_list", "data": {"events": []}}
+    block = gr._format_grounded_user_block("parking?", "logistics", 0.9, facts)
+    assert "Classifier intent:" not in block
+    assert "What the user wrote:" in block

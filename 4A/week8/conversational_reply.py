@@ -28,6 +28,8 @@ _REPLY_SYSTEM_PROMPT = """You are the WhatsApp helper for Radha Krishna Temple o
 
 The user's message was hard to route. Write ONE short, friendly reply for WhatsApp in plain text — no JSON.
 
+Focus on what the user actually wrote. Any intent label or "Internal route" metadata in the message block is only for routing — do not answer as if that label were the user's question.
+
 WhatsApp formatting (use only where it improves scanability; do not decorate every word):
 - Bold: single asterisks, like *this* (do not use **double** asterisks; WhatsApp does not treat those as bold).
 - Italic: underscores, like _this_, for light emphasis on a phrase or hint.
@@ -79,10 +81,14 @@ def _format_user_block(user_message: str, intent: str, confidence: Any, context_
         conf_f = float(confidence)
     except (TypeError, ValueError):
         conf_f = 0.0
+    route_line = (
+        f"Internal route (metadata only — not the user's question): {intent!r}, confidence {conf_f:.2f}."
+    )
     return (
+        "Your reply must directly respond to what the user wrote below.\n\n"
         f"What the user wrote:\n{user_message.strip()}\n\n"
-        f"Classifier intent: {intent} (confidence {conf_f:.2f})\n\n"
         f"Reference facts (do not invent beyond these):\n{context_block.strip()}\n\n"
+        f"{route_line}\n\n"
         f"{_CLARIFICATION_FORMATTING_BLOCK}"
     )
 

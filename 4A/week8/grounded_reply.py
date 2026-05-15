@@ -27,9 +27,18 @@ _OLLAMA_DEFAULT_MODEL = "gemma3:4b"
 
 _LIST_ROW_CAP = 8
 
+_FORMAT_GUIDANCE_SCOPE_LINE = (
+    "- Layout hints above are subordinate to the user's question: do not expand into topics "
+    "(parking, food, registration, transport, etc.) that the user did not ask about."
+)
+
 _GROUNDED_SYSTEM_PROMPT = """You are the WhatsApp assistant for Radha Krishna Temple of Dallas in Allen, Texas.
 
 You will receive the user's message and a JSON object called FACTS. The FACTS were built from the event API, recurring schedule data, or static temple information — nothing else.
+
+Work in this order: (1) read the user's actual question in the message block; (2) answer that question using ONLY information in FACTS (especially structured fields under data.*); (3) treat classifier_intent, response_kind, user_message_echo (if present), and any "Internal route" line as routing or echo metadata — they must not introduce topics the user did not ask about.
+
+If user_message_echo appears inside FACTS, it is a trimmed echo of the user's words for alignment only; never treat it as a source of event facts beyond what the structured FACTS fields already support.
 
 Write ONE WhatsApp-ready reply in plain text. Match the user's question scope only (e.g. if they asked about parking, focus on parking; do not volunteer food, transport, or registration unless the question is broad or explicitly asks for multiple topics).
 
@@ -139,10 +148,12 @@ def _formatting_guidance(facts: Mapping[str, Any]) -> str:
                 f"- More than {_LIST_ROW_CAP} events appear in FACTS: show the first {_LIST_ROW_CAP} "
                 "in full list form, then briefly note there are more (no invented names)."
             )
+        lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
         return "\n".join(lines)
 
     if rk == "no_results":
         lines.append("- No matching events: one or two short friendly sentences; no bullet list of events.")
+        lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
         return "\n".join(lines)
 
     if rk == "temple_static":
@@ -151,6 +162,7 @@ def _formatting_guidance(facts: Mapping[str, Any]) -> str:
             "(e.g. *Address*, *Contact*) and blank lines between sections; keep the same field order "
             "as in FACTS; do not invent fields."
         )
+        lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
         return "\n".join(lines)
 
     if rk in {"logistics_event", "single_event", "sponsorship_event"}:
@@ -180,6 +192,7 @@ def _formatting_guidance(facts: Mapping[str, Any]) -> str:
             lines.append(
                 "- Sponsorship: describe only tiers/options present in FACTS; no invented prices or levels."
             )
+        lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
         return "\n".join(lines)
 
     if rk == "recurring_schedule":
@@ -192,6 +205,7 @@ def _formatting_guidance(facts: Mapping[str, Any]) -> str:
             lines.append(
                 "- If data.next_occurrence is set, mention it in a compact labeled line (*Next:* …)."
             )
+        lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
         return "\n".join(lines)
 
     if rk == "sponsorship":
@@ -208,6 +222,7 @@ def _formatting_guidance(facts: Mapping[str, Any]) -> str:
                 "- General sponsorship: short prose from FACTS (e.g. note, ways_to_contribute); "
                 "no invented tiers."
             )
+        lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
         return "\n".join(lines)
 
     if rk in {"api_client_error", "generic_error"}:
@@ -215,12 +230,14 @@ def _formatting_guidance(facts: Mapping[str, Any]) -> str:
             "- System/API issue: brief empathetic prose (one short paragraph); "
             "no decorative bullet lists or fake recovery steps."
         )
+        lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
         return "\n".join(lines)
 
     lines.append(
         "- Follow the structure of FACTS; use *bold* / _italic_ only where they aid scanning; "
         "no nested bullet lists."
     )
+    lines.append(_FORMAT_GUIDANCE_SCOPE_LINE)
     return "\n".join(lines)
 
 
@@ -232,10 +249,15 @@ def _format_grounded_user_block(
     except (TypeError, ValueError):
         conf_f = 0.0
     guidance = _formatting_guidance(facts)
+    route_line = (
+        f"Internal route (metadata only — not the user's question; do not expand topics from it): "
+        f"{intent!r}, confidence {conf_f:.2f}."
+    )
     return (
+        "Your reply must directly address the user's question below.\n\n"
         f"What the user wrote:\n{user_message.strip()}\n\n"
-        f"Classifier intent: {intent} (confidence {conf_f:.2f})\n\n"
         f"FACTS (JSON — sole source of truth):\n{_facts_json_block(facts)}\n\n"
+        f"{route_line}\n\n"
         f"{guidance}"
     )
 
