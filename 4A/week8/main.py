@@ -179,7 +179,8 @@ def _extract_shown_list_index_1based(body_text: str) -> Optional[int]:
 
 def _build_clarification_reply() -> str:
     return (
-        "I'm not sure I caught that. You can ask me about:\n"
+        "Hi there — happy to help.\n\n"
+        "Tell me what you're looking for! For example:\n"
         "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
         "- a *specific event* (e.g. \"tell me about Holi\")\n"
         "- *recurring temple schedule* (e.g. \"when is Sunday Satsang?\")\n"

@@ -176,6 +176,186 @@ def _should_clarify_guru_contact_without_event(message: str, intent: str, entiti
     return bool(_GURU_CONTACT_CHITCHAT.search(message))
 
 
+# Standalone hi/hello/etc. must not hit discovery → generic event list (LLMs often over-label).
+_PURE_GREETING_FORBIDDEN = frozenset(
+    {
+        "events",
+        "event",
+        "upcoming",
+        "calendar",
+        "parking",
+        "donate",
+        "donation",
+        "sponsor",
+        "sponsorship",
+        "seva",
+        "schedule",
+        "logistics",
+        "address",
+        "directions",
+        "temple",
+        "when",
+        "where",
+        "weekend",
+        "tonight",
+        "tomorrow",
+        "today",
+        "week",
+        "list",
+        "show",
+        "happening",
+        "programs",
+        "program",
+        "festival",
+        "time",
+        "tell",
+        "need",
+        "want",
+        "looking",
+        "find",
+        "info",
+        "details",
+        "help",
+        "something",
+        "coming",
+        "this",
+        "next",
+        "maybe",
+        "please",
+        "pls",
+        "can",
+        "could",
+        "would",
+        "about",
+        "park",
+        "cost",
+        "price",
+        "much",
+    }
+)
+
+_PURE_GREETING_ALLOWED = frozenset(
+    {
+        "hi",
+        "hello",
+        "hey",
+        "hiya",
+        "howdy",
+        "yo",
+        "sup",
+        "gm",
+        "gn",
+        "good",
+        "morning",
+        "afternoon",
+        "evening",
+        "day",
+        "there",
+        "friend",
+        "friends",
+        "everyone",
+        "ji",
+        "namaste",
+        "namaskar",
+        "radhe",
+        "jai",
+        "shri",
+        "krishna",
+        "hari",
+        "bol",
+        "haribol",
+        "how",
+        "are",
+        "you",
+        "u",
+        "your",
+        "doing",
+        "is",
+        "it",
+        "its",
+        "a",
+        "the",
+        "to",
+        "all",
+        "ya",
+        "yah",
+        "yup",
+        "nope",
+        "yes",
+        "no",
+        "ok",
+        "okay",
+        "thanks",
+        "thank",
+        "very",
+        "much",
+        "sir",
+        "madam",
+        "whats",
+        "up",
+        "going",
+        "hows",
+        "again",
+        "back",
+        "here",
+        "do",
+        "i",
+    }
+)
+
+_GREETING_STEMS = frozenset(
+    {
+        "hi",
+        "hello",
+        "hey",
+        "hiya",
+        "howdy",
+        "yo",
+        "sup",
+        "gm",
+        "gn",
+        "good",
+        "namaste",
+        "namaskar",
+        "radhe",
+        "haribol",
+        "jai",
+        "shri",
+        "krishna",
+        "hari",
+        "how",
+        "thanks",
+        "thank",
+        "ok",
+        "okay",
+    }
+)
+
+
+def _is_pure_greeting(message: str, entities: Mapping[str, Any]) -> bool:
+    """True when the message is only small-talk / greeting with no operational ask."""
+    if entities.get("event_name") or entities.get("program_name") or entities.get("timeframe"):
+        return False
+    if _EXPLICIT_EVENT_BROWSE.search(message):
+        return False
+    raw = message.strip().lower()
+    if not raw or len(raw) > 96:
+        return False
+    compact = re.sub(r"[''`]", "", raw)
+    compact = re.sub(r"[^\w\s]", " ", compact)
+    tokens = [t for t in compact.split() if t]
+    if not tokens or len(tokens) > 12:
+        return False
+    for t in tokens:
+        if t in _PURE_GREETING_FORBIDDEN:
+            return False
+        if t not in _PURE_GREETING_ALLOWED:
+            return False
+    if not (set(tokens) & _GREETING_STEMS):
+        return False
+    return True
+
+
 # -------------------------------
 # SYSTEM PROMPT (LLM)
 # -------------------------------
@@ -196,6 +376,11 @@ life counseling, or generic "how to help the world" guidance — and they are NO
 temple calendar, for parking/food/registration for an event, for recurring program times, or for
 donation logistics — choose intent "ambiguous" with confidence below 0.35. Do not label those as
 discovery or event_specific just because the temple runs programs.
+
+If the message is ONLY a short greeting or salutation (e.g. "hi", "hello", "hey there", "good morning",
+"namaste", "radhe radhe") with no question about events, schedule, parking, donations, or a named
+program — choose intent "ambiguous" with confidence below 0.35. Do NOT use "discovery" for bare
+greetings.
 
 Respond ONLY with JSON:
 {"intent": "<intent>", "confidence": <float>}
@@ -584,6 +769,12 @@ def classify(message: str) -> Dict:
             intent = "clarification_needed"
         elif _should_clarify_guru_contact_without_event(message, intent, entities):
             intent = "clarification_needed"
+
+    # Bare "hello" / "good morning" etc. must not become discovery → event catalog
+    # when an LLM tier overconfidently labels small talk.
+    if intent not in ("clarification_needed", "unknown") and _is_pure_greeting(message, entities):
+        intent = "clarification_needed"
+        confidence = min(float(confidence or 0.0), 0.55)
 
     return {
         "intent": intent,

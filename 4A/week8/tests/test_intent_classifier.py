@@ -142,6 +142,16 @@ class TestIntentClassifier(unittest.TestCase):
         result = classify("What are the upcoming events?")
         self.assertIn(result["intent"], ["discovery", "time_based", "event_specific"])
 
+    @patch("intent_classifier._classify_with_gemini", return_value={"intent": "discovery", "confidence": 0.95})
+    def test_greeting_overrides_llm_discovery(self, _mock_gemini):
+        result = classify("Hello")
+        self.assertEqual(result["intent"], "clarification_needed")
+
+    @patch("intent_classifier._classify_with_gemini", return_value={"intent": "discovery", "confidence": 0.95})
+    def test_greeting_with_event_request_not_stripped(self, _mock_gemini):
+        result = classify("Hello, any events this weekend?")
+        self.assertIn(result["intent"], ["discovery", "time_based", "event_specific", "clarification_needed"])
+
 
 if __name__ == "__main__":
     unittest.main()

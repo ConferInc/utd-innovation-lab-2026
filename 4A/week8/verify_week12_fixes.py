@@ -397,7 +397,8 @@ def run_case(case: Case) -> Result:
     # Don't call build_response for clarification_needed — main.py wouldn't.
     if intent in ("clarification_needed", "ambiguous", "unknown"):
         reply = (
-            "I'm not sure I caught that. You can ask me about:\n"
+            "Hi there — happy to help.\n\n"
+            "Tell me what you're looking for! For example:\n"
             "- *upcoming events* (e.g. \"what's happening this weekend?\")\n"
             "- a *specific event* (e.g. \"tell me about Holi\")\n"
             "- *recurring temple schedule* (e.g. \"when is Sunday Satsang?\")\n"
