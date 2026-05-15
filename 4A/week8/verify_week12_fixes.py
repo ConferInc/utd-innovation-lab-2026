@@ -45,7 +45,13 @@ logging.getLogger("google_genai").setLevel(logging.WARNING)
 
 log = logging.getLogger("verify_week12")
 
-from intent_classifier import classify, warm_up, _is_pure_greeting, _is_temple_personnel_roster_question
+from intent_classifier import (
+    classify,
+    pastoral_guidance_kind,
+    warm_up,
+    _is_pure_greeting,
+    _is_temple_personnel_roster_question,
+)
 from response_builder import build_response
 
 API_BASE = os.getenv("EVENTS_API_BASE_URL")
@@ -407,12 +413,29 @@ def run_case(case: Case) -> Result:
             "- *parking / logistics* for an event\n"
             "- *donations / seva*"
         )
+        pastoral = pastoral_guidance_kind(case.message, entities_map)
         if _is_temple_personnel_roster_question(case.message, entities_map):
             reply = (
                 "Sorry — I don't have that information. This assistant only has access to "
                 "the *event calendar*, *recurring program times*, *practical logistics* for named events, "
                 "*temple address / hours / parking*, and *donations*.\n\n"
                 "Ask me in your own words about any of those, and I'll do my best to help."
+            )
+        elif pastoral == "guru_contact":
+            reply = (
+                "Namaste!\n\n"
+                "To connect with the Pujari or Pandit Ji, you can visit the temple during darshan hours "
+                "or inquire at the front desk. They can guide you on the best times to speak with them.\n\n"
+                "You can also reach out to the temple office at +1 (469) 444-7173 during their operating hours "
+                "to schedule a conversation or ask about other temple services."
+            )
+        elif pastoral == "spiritual_peace":
+            reply = (
+                "Dear devotee, finding peace is a journey many seek. Our temple offers various programs "
+                "and practices that can help guide you.\n\n"
+                "You can explore our services by visiting our website at jkyog.org. We also have recurring "
+                "events like Sunday Satsang, which many find brings a sense of calm and spiritual connection. "
+                "If you'd like to know more about our schedule or how you can get involved, please feel free to ask!"
             )
         elif pure:
             reply = f"Hi there — happy to help.\n\n{topics}"

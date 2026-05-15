@@ -32,6 +32,7 @@ from intent_classifier import (
     _is_pure_greeting,
     _is_temple_personnel_roster_question,
     classify,
+    pastoral_guidance_kind,
     warm_up as _warm_up_gemini,
 )
 from response_builder import build_response, build_response_with_facts
@@ -180,6 +181,26 @@ def _extract_shown_list_index_1based(body_text: str) -> Optional[int]:
         if m:
             return int(m.group(1))
     return None
+
+
+def _build_pastoral_guru_contact_reply() -> str:
+    return (
+        "Namaste!\n\n"
+        "To connect with the Pujari or Pandit Ji, you can visit the temple during darshan hours "
+        "or inquire at the front desk. They can guide you on the best times to speak with them.\n\n"
+        "You can also reach out to the temple office at +1 (469) 444-7173 during their operating hours "
+        "to schedule a conversation or ask about other temple services."
+    )
+
+
+def _build_pastoral_spiritual_peace_reply() -> str:
+    return (
+        "Dear devotee, finding peace is a journey many seek. Our temple offers various programs "
+        "and practices that can help guide you.\n\n"
+        "You can explore our services by visiting our website at jkyog.org. We also have recurring "
+        "events like Sunday Satsang, which many find brings a sense of calm and spiritual connection. "
+        "If you'd like to know more about our schedule or how you can get involved, please feel free to ask!"
+    )
 
 
 def _build_out_of_scope_reply() -> str:
@@ -373,19 +394,24 @@ def process_message_background(
             entities_map = ent if isinstance(ent, dict) else {}
             pure_greeting = _is_pure_greeting(body_text, entities_map)
             staff_roster_q = _is_temple_personnel_roster_question(body_text, entities_map)
+            pastoral = pastoral_guidance_kind(body_text, entities_map)
             if staff_roster_q:
                 reply_text = _build_out_of_scope_reply()
+            elif pastoral == "guru_contact":
+                reply_text = _build_pastoral_guru_contact_reply()
+            elif pastoral == "spiritual_peace":
+                reply_text = _build_pastoral_spiritual_peace_reply()
             else:
                 reply_text = _build_clarification_reply(pure_greeting=pure_greeting)
-            if _llm_routing_available():
+            if _llm_routing_available() and not staff_roster_q and pastoral is None:
                 try:
                     generated = build_conversational_clarification_reply(
                         body_text,
                         intent_str,
                         raw_classification.get("confidence"),
                         build_clarification_context_block(),
-                        pure_greeting=pure_greeting and not staff_roster_q,
-                        out_of_scope=staff_roster_q,
+                        pure_greeting=pure_greeting,
+                        out_of_scope=False,
                     )
                     if generated and generated.strip():
                         reply_text = generated.strip()

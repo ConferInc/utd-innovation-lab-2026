@@ -214,6 +214,27 @@ def _is_temple_personnel_roster_question(message: str, entities: Mapping[str, An
     return False
 
 
+def pastoral_guidance_kind(message: str, entities: Mapping[str, Any]) -> Optional[str]:
+    """Detect chit-chat that gets a fixed warm reply (no generic 'did not understand').
+
+    Returns guru_contact, spiritual_peace, or None.
+    """
+    if entities.get("event_name") or entities.get("program_name"):
+        return None
+    if _EXPLICIT_EVENT_BROWSE.search(message):
+        return None
+    if _GURU_CONTACT_CHITCHAT.search(message):
+        return "guru_contact"
+    if _SPIRITUAL_NON_EVENT.search(message):
+        return "spiritual_peace"
+    lowered = message.lower()
+    if re.search(r"\b(find(ing)?|seek(ing)?)\s+peace\b", lowered):
+        return "spiritual_peace"
+    if re.search(r"\bhow\s+can\s+i\s+find\s+peace\b", lowered):
+        return "spiritual_peace"
+    return None
+
+
 # Standalone hi/hello/etc. must not hit discovery → generic event list (LLMs often over-label).
 _PURE_GREETING_FORBIDDEN = frozenset(
     {
