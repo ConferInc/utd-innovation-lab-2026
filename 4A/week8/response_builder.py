@@ -11,6 +11,7 @@ build_response_with_facts(...) -> BuildResult  # draft + JSON facts for grounded
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -312,6 +313,12 @@ def build_response_with_facts(classified_intent: dict, session_context: dict) ->
         )
 
     try:
+        if _should_use_temple_static_for_venue_intent(classified_intent, session_context):
+            return BuildResult(
+                _truncate_whatsapp(_format_temple_info()),
+                env("temple_static", {"temple": _temple_static_data(), "reason": "temple_building_faq"}),
+            )
+
         if intent == "recurring_schedule":
             # Week 12 fix (Bug 1): Use the local recurring handler. The Team 4B
             # `/recurring` endpoint returns an empty list for these temple
@@ -415,18 +422,6 @@ def build_response_with_facts(classified_intent: dict, session_context: dict) ->
             )
 
         if intent in {"logistics", "parking", "logistics_parking"}:
-            # Bugfix (Round-3, R3-3): if the user is asking about the temple
-            # itself ("where is the temple?", "temple address", "what time
-            # does the temple open?") and didn't reference an event, return
-            # the static temple-info block. Without this branch the bot was
-            # picking up `selected_event_id` from session memory and
-            # returning logistics for the *previously selected* event.
-            if event_id is None and _is_venue_question(session_context):
-                return BuildResult(
-                    _truncate_whatsapp(_format_temple_info()),
-                    env("temple_static", {"temple": _temple_static_data(), "reason": "venue_question"}),
-                )
-
             search_term = _resolve_targeted_search_term(query, classified_intent, session_context)
             event = _resolve_single_event(client, event_id=event_id, query=search_term)
             if event is None:
@@ -1277,6 +1272,38 @@ def _is_venue_question(session_context: Mapping[str, Any]) -> bool:
     if len(tokens) > 6:
         return False
     return bool(tokens & _VENUE_QUESTION_TOKENS)
+
+
+def _should_use_temple_static_for_venue_intent(
+    classified_intent: Mapping[str, Any],
+    session_context: Mapping[str, Any],
+) -> bool:
+    """Temple building FAQ (hours, open/close, address) — not a selected list row.
+
+    When the user asks about *the temple* in general, we must answer from
+    static temple data even if ``selected_event_id`` is set from a prior
+    short follow-up (<=4 words) that would otherwise attach this turn to the
+    wrong event.
+    """
+    if not _is_venue_question(session_context):
+        return False
+    entities = classified_intent.get("entities") or {}
+    if isinstance(entities, Mapping) and (
+        entities.get("event_name") or entities.get("program_name")
+    ):
+        return False
+    if classified_intent.get("event_name") or classified_intent.get("query"):
+        return False
+    raw = str(session_context.get("user_message") or "").lower()
+    if re.search(
+        r"\b(what\s+time|when\s+(does|do|is|are)|hours?|open(ing)?|close(ing)?|opens?|closes?|"
+        r"darshan|timings?)\b",
+        raw,
+    ):
+        return True
+    if re.search(r"\b(where|address|directions|located|location|map|contact|phone)\b", raw):
+        return True
+    return False
 
 
 def _format_temple_info() -> str:

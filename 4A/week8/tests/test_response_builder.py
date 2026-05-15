@@ -8,6 +8,7 @@ from response_builder import (
     _format_event_list,
     _format_timeframe_heading,
     build_response,
+    build_response_with_facts,
 )
 
 
@@ -138,6 +139,34 @@ def test_format_event_list_footer_uses_dynamic_range():
     text = _format_event_list(events, "next weekend")
     assert "1-2 for full details" in text
     assert "1, 2, or 3" not in text
+
+
+def test_temple_open_uses_static_despite_stale_selected_event():
+    """Short venue + hours questions must not attach to list-selection event_id."""
+    client = StubEventAPIClient()
+    classified = {"intent": "logistics", "entities": {}}
+    ctx = {
+        "api_client": client,
+        "user_message": "when does temple open",
+        "selected_event_id": 999,
+    }
+    br = build_response_with_facts(classified, ctx)
+    assert br.facts.get("response_kind") == "temple_static"
+    assert "9:30 AM" in br.draft
+    assert client.search_queries == []
+
+
+def test_what_time_temple_open_full_question():
+    client = StubEventAPIClient()
+    classified = {"intent": "logistics", "entities": {}}
+    ctx = {
+        "api_client": client,
+        "user_message": "what time does the temple open?",
+        "selected_event_id": 999,
+    }
+    br = build_response_with_facts(classified, ctx)
+    assert br.facts.get("response_kind") == "temple_static"
+    assert "Monday" in br.draft and "9:30 AM" in br.draft
 
 
 def test_format_temple_info_mentions_on_site_parking():
